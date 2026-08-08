@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
+<package format="1">
+  <name>ClickFactory Workbench</name>
+  <description>Jewelry, Accessories, Daily Goods, and Civil Engineering Structure Design Workbench for FreeCAD.</description>
+  <version>1.0.0</version>
+  <date>2026-08-08</date>
+
+  <!-- 管理者情報 -->
+  <maintainer email="horishima.lab@gmail.com">Hori Lab</maintainer>
+
+  <!-- ライセンス情報 -->
+  <license file="LICENSE">LGPL-2.1-or-later</license>
+
+  <!-- リポジトリ・ウェブサイト情報 -->
+  <url type="repository" branch="main">https://github.com/tanutanu3pon/One-Click-Factory-Construction-FreeCAD-Workbench</url>
+  <url type="readme">https://github.com/tanutanu3pon/One-Click-Factory-Construction-FreeCAD-Workbench/blob/main/README.md</url>
+
+  <!-- アイコン情報 -->
+  <icon>icons/main.png</icon>
+
+  <!-- 依存関係 -->
+  <depend name="FreeCAD" version="1.1.3"/>
+
+  <!-- タグ・カテゴリ設定 -->
+  <tag>One Click</tag>
+  <tag>Construction</tag>
+  <tag>Modeling</tag>
+  <tag>3D Printing</tag>
+
+  <!-- ワークベンチクラスの設定 -->
+  <content>
+    <workbench>
+      <classname>RingWorkbench</classname>
+      <subdirectory>.</subdirectory>
+    </workbench>
+    <workbench>
+      <classname>ConstructionWorkbench</classname>
+      <subdirectory>.</subdirectory>
+    </workbench>
+  </content>
+</package>
