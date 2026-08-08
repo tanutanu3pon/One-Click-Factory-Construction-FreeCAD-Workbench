@@ -13,10 +13,21 @@ def translate_text(text, lang):
         return text
     
     trans_dict = Dictionary.TRANSLATION_DICT
+    if not trans_dict:
+        return text
 
+    # 1. 完全一致チェック
     if text in trans_dict:
         return trans_dict[text]
-    
+
+    # 2. 語尾の揺れを除去したコアテキストで照合
+    clean_text = re.sub(r'(の作成|の生成|の計算|を作成します|を生成します|を作成|を生成|作成|生成)$', '', text).strip()
+    for key, val in trans_dict.items():
+        clean_key = re.sub(r'(の作成|の生成|の計算|を作成します|を生成します|を作成|を生成|作成|生成)$', '', key).strip()
+        if clean_text and clean_key and clean_text == clean_key:
+            return val
+
+    # 3. HTMLタグや記号付きテキストの抽出・置換
     match = re.match(r"^(<[^>]+>)*(.*?)(</[^>]+>|[:：\s])*$", text)
     if match:
         prefix = match.group(1) or ""
@@ -24,11 +35,18 @@ def translate_text(text, lang):
         suffix = match.group(3) or ""
         if core_text in trans_dict:
             return prefix + trans_dict[core_text] + suffix
-            
+        clean_core = re.sub(r'(の作成|の生成|の計算|を作成します|を生成します|を作成|を生成|作成|生成)$', '', core_text).strip()
+        for key, val in trans_dict.items():
+            clean_key = re.sub(r'(の作成|の生成|の計算|を作成します|を生成します|を作成|を生成|作成|生成)$', '', key).strip()
+            if clean_core and clean_key and clean_core == clean_key:
+                return prefix + val + suffix
+
+    # 4. 辞書内の長単語からの部分一致置換
     new_text = text
     for jp in sorted(trans_dict.keys(), key=len, reverse=True):
-        if jp in new_text:
+        if jp and jp in new_text:
             new_text = new_text.replace(jp, trans_dict[jp])
+            
     return new_text
 
 
@@ -63,7 +81,73 @@ def auto_translate_widget(widget, lang):
                 combo.setItemText(i, translate_text(txt, lang))
 
 
+# QInputDialog / QMessageBox 等の静的関数に渡される引数（タイトルやラベル）を自動翻訳するフック関数
+def install_dialog_auto_translator():
+    from Core.QtCompat import QtWidgets
+    import Core.Language as Language
+
+    # 1. QDialog の showEvent フック（カスタムダイアログ用）
+    if not getattr(QtWidgets.QDialog, '_auto_translate_installed', False):
+        orig_showEvent = QtWidgets.QDialog.showEvent
+        def custom_showEvent(self, event):
+            try:
+                current_lang = Language.get_language()
+                if current_lang != "日本語":
+                    auto_translate_widget(self, current_lang)
+            except Exception:
+                pass
+            return orig_showEvent(self, event)
+
+        QtWidgets.QDialog.showEvent = custom_showEvent
+        QtWidgets.QDialog._auto_translate_installed = True
+
+    # 2. QInputDialog の静的関数フック（引数レベルの自動翻訳）
+    if not getattr(QtWidgets.QInputDialog, '_translation_patched', False):
+        orig_getDouble = QtWidgets.QInputDialog.getDouble
+        def custom_getDouble(parent, title, label, *args, **kwargs):
+            lang = Language.get_language()
+            if lang != "日本語":
+                title = translate_text(title, lang)
+                label = translate_text(label, lang)
+            return orig_getDouble(parent, title, label, *args, **kwargs)
+        QtWidgets.QInputDialog.getDouble = custom_getDouble
+
+        orig_getText = QtWidgets.QInputDialog.getText
+        def custom_getText(parent, title, label, *args, **kwargs):
+            lang = Language.get_language()
+            if lang != "日本語":
+                title = translate_text(title, lang)
+                label = translate_text(label, lang)
+            return orig_getText(parent, title, label, *args, **kwargs)
+        QtWidgets.QInputDialog.getText = custom_getText
+
+        orig_getInt = QtWidgets.QInputDialog.getInt
+        def custom_getInt(parent, title, label, *args, **kwargs):
+            lang = Language.get_language()
+            if lang != "日本語":
+                title = translate_text(title, lang)
+                label = translate_text(label, lang)
+            return orig_getInt(parent, title, label, *args, **kwargs)
+        QtWidgets.QInputDialog.getInt = custom_getInt
+
+        orig_getItem = QtWidgets.QInputDialog.getItem
+        def custom_getItem(parent, title, label, items, *args, **kwargs):
+            lang = Language.get_language()
+            if lang != "日本語":
+                title = translate_text(title, lang)
+                label = translate_text(label, lang)
+                if isinstance(items, (list, tuple)):
+                    items = [translate_text(str(it), lang) for it in items]
+            return orig_getItem(parent, title, label, items, *args, **kwargs)
+        QtWidgets.QInputDialog.getItem = custom_getItem
+
+        QtWidgets.QInputDialog._translation_patched = True
+
+
 def register_workbench(base_path):
+    # ダイアログの自動翻訳フックを適用
+    install_dialog_auto_translator()
+
     original_addCommand = FreeCADGui.addCommand
 
     def custom_addCommand(command_name, command_obj):
