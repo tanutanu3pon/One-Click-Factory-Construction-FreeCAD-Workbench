@@ -9,7 +9,8 @@ import re
 wb_dir = os.path.dirname(os.path.abspath(__file__))
 tool_dir = os.path.join(wb_dir, "Tool")
 trans_dir = os.path.join(wb_dir, "translations")
-json_path = os.path.join(trans_dir, "dictionary.json")
+# ★修正: dictionary.json から dictionary_en.json へ変更
+json_path = os.path.join(trans_dir, "dictionary_en.json")
 
 os.makedirs(trans_dir, exist_ok=True)
 
