@@ -1,19 +1,12 @@
 # -*- coding: utf-8 -*-
-# Tool/MakeSHook.py
 import os
 import math
 import FreeCAD
 import FreeCADGui
 import Part
-
-# Qtの互換性確保
 from Core.QtCompat import QtWidgets, QtGui, QtCore
-
 import Core.Progress as Progress
 
-# ==========================================
-# S字フック専用の設定ダイアログ窓
-# ==========================================
 class SHookDialog(QtWidgets.QDialog):
     def __init__(self, parent=None):
         super(SHookDialog, self).__init__(parent)
@@ -22,19 +15,16 @@ class SHookDialog(QtWidgets.QDialog):
         
         layout = QtWidgets.QFormLayout(self)
         
-        # 上部フックの曲がり直径 (D1)
         self.spin_hook_d1 = QtWidgets.QDoubleSpinBox()
         self.spin_hook_d1.setRange(5.0, 1000.0)
         self.spin_hook_d1.setValue(40.0)
         self.spin_hook_d1.setSuffix(" mm")
 
-        # 下部フックの曲がり直径 (D2)
         self.spin_hook_d2 = QtWidgets.QDoubleSpinBox()
         self.spin_hook_d2.setRange(5.0, 1000.0)
         self.spin_hook_d2.setValue(30.0)
         self.spin_hook_d2.setSuffix(" mm")
         
-        # 本体の太さ（線径の直径 d）
         self.spin_wire_d = QtWidgets.QDoubleSpinBox()
         self.spin_wire_d.setRange(0.5, 100.0)
         self.spin_wire_d.setValue(3.0)
@@ -59,9 +49,6 @@ class SHookDialog(QtWidgets.QDialog):
             "wire_r": self.spin_wire_d.value() / 2.0
         }
 
-# ==========================================
-# ツール本体（超軽量・視覚補完モデル）
-# ==========================================
 class Tool_MakeSHook:
     def GetResources(self):
         icon_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "icons", "s.png").replace('\\', '/')
@@ -89,13 +76,12 @@ class Tool_MakeSHook:
             QtWidgets.QMessageBox.warning(None, "エラー", "本体の太さ(d)は、フックの直径よりも細くしてください。")
             return
 
+        # 存在しない safe_transaction を削除し標準の ProgressManager とトランザクション管理へ修正
+        doc.openTransaction("CreateSHook")
         try:
-            # with構文で囲むことで、例外発生時の abortTransaction やプログレスバーの close が全自動化されます
-            with Progress.safe_transaction("S字フック製造工場", "手順1: 最適な分割密度を自動演算中...", doc=doc) as bar:
+            with Progress.ProgressManager() as bar:
+                bar.start(title="S字フック製造工場", initial_text="手順1: 最適な分割密度を自動演算中...")
                 
-                # --------------------------------------------------
-                # ① 適応型分割数の自動計算
-                # --------------------------------------------------
                 points = []
                 deep_angle = 55.0 
                 total_angle = 180.0 + deep_angle
@@ -104,7 +90,6 @@ class Tool_MakeSHook:
                 segments1 = max(30, int((r_hook1 * rad_total) / 1.5))
                 segments2 = max(30, int((r_hook2 * rad_total) / 1.5))
                 
-                # 上部フック
                 start_ang1 = -90.0 - deep_angle
                 end_ang1 = 90.0
                 for i in range(segments1 + 1):
@@ -114,7 +99,6 @@ class Tool_MakeSHook:
                     y = r_hook1 + r_hook1 * math.sin(rad)
                     points.append(FreeCAD.Vector(x, y, 0))
                     
-                # 下部フック
                 start_ang2 = -90.0
                 end_ang2 = 90.0 + deep_angle
                 y_center2 = (2.0 * r_hook1) + r_hook2
@@ -125,9 +109,6 @@ class Tool_MakeSHook:
                     y = y_center2 + r_hook2 * math.sin(rad)
                     points.append(FreeCAD.Vector(x, y, 0))
 
-                # --------------------------------------------------
-                # ② 各分割線形での個別スイープ実行（食い込み処理を追加）
-                # --------------------------------------------------
                 parts_pool = []
                 total_segments = len(points) - 1
                 overlap_len = wire_r * 0.20 
@@ -140,12 +121,10 @@ class Tool_MakeSHook:
                     
                     if length > 0.0001:
                         direction = vec.normalize()
-                        
                         circle_edge = Part.makeCircle(wire_r, p1, direction)
                         profile_face = Part.Face(Part.Wire([circle_edge]))
                         
                         p2_extended = p1 + direction * (length + overlap_len)
-                        
                         line_edge = Part.makeLine(p1, p2_extended)
                         line_path = Part.Wire([line_edge])
                         
@@ -154,20 +133,14 @@ class Tool_MakeSHook:
                     
                     percent = int(20 + (50 * i / total_segments))
                     if i % 10 == 0:
-                        bar.update(percent, f"手順3?4: 超軽量オーバーラップスイープ中... ({i}/{total_segments})")
+                        bar.update(percent, f"手順3-4: 超軽量オーバーラップスイープ中... ({i}/{total_segments})")
 
-                # --------------------------------------------------
-                # ③ 両端の丸め処理
-                # --------------------------------------------------
                 bar.update(75, "手順4.5: 端部のフィレット球体を生成中...")
                 sphere_start = Part.makeSphere(wire_r, points[0])
                 sphere_end = Part.makeSphere(wire_r, points[-1])
                 parts_pool.append(sphere_start)
                 parts_pool.append(sphere_end)
 
-                # --------------------------------------------------
-                # ④ 複合体（Compound）化と画面更新
-                # --------------------------------------------------
                 bar.update(85, "手順5: 全パーツを複合体(Compound)に一括統合中...")
                 final_shape = Part.makeCompound(parts_pool)
 
@@ -176,6 +149,7 @@ class Tool_MakeSHook:
                 obj.Shape = final_shape
                 obj.ViewObject.ShapeColor = (0.75, 0.75, 0.8)
                 
+                doc.commitTransaction()
                 doc.recompute()
                 obj.ViewObject.DisplayMode = "Shaded"
                 
@@ -185,8 +159,8 @@ class Tool_MakeSHook:
                     FreeCADGui.activeView().fitAll()
 
         except Exception as e:
+            doc.abortTransaction()
             FreeCAD.Console.PrintError(f"生成に失敗しました: {str(e)}\n")
             QtWidgets.QMessageBox.critical(None, "エラー", f"生成中にエラーが発生しました:\n{str(e)}")
 
-# コマンド登録
 FreeCADGui.addCommand('Ring_MakeSHook', Tool_MakeSHook())

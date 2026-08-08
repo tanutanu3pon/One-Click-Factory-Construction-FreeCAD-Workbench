@@ -8,13 +8,11 @@ import FreeCADGui
 
 from Core.QtCompat import QtWidgets, QtGui, QtCore
 
-# Coin3D (ライティング・カメラ制御用)
 try:
     from pivy import coin
 except ImportError:
     coin = None
 
-# おしゃれなカラーパレット定義
 COLOR_PALETTES = {
     "1. 高級ゴールド & マットブラック": [(0.90, 0.75, 0.30), (0.12, 0.12, 0.14), (0.85, 0.85, 0.88)],
     "2. 情熱ルビー & ローズゴールド": [(0.85, 0.10, 0.25), (0.92, 0.68, 0.65), (0.20, 0.15, 0.18)],
@@ -52,20 +50,14 @@ class PresenterDialog(QtWidgets.QDialog):
             QPushButton:checked { background-color: #d0e4ff; border-color: #0055b8; color: #003366; }
         """)
 
-        # アニメーション用タイマー
         self.anim_timer = QtCore.QTimer(self)
         self.anim_timer.setInterval(30)
         self.anim_timer.timeout.connect(self.update_animation)
         
         self.is_animating = False
-        
-        # 初期位置の記録用
         self.initial_cam_pos = None
         self.initial_cam_rot = None
-        
-        # ズーム制作用
         self.anim_time = 0.0
-
         self.light_node = None
 
         self.init_light_node()
@@ -99,7 +91,6 @@ class PresenterDialog(QtWidgets.QDialog):
         layout = QtWidgets.QVBoxLayout(self)
         layout.setSpacing(12) 
 
-        # --- 1. カラーパレット ---
         color_group = QtWidgets.QGroupBox("カラー・配色設定")
         color_layout = QtWidgets.QVBoxLayout(color_group)
 
@@ -116,7 +107,6 @@ class PresenterDialog(QtWidgets.QDialog):
         color_layout.addWidget(btn_random_color)
         layout.addWidget(color_group)
 
-        # --- 2. ライティング調整 ---
         light_group = QtWidgets.QGroupBox("光源・ライティング調整")
         light_layout = QtWidgets.QFormLayout(light_group)
 
@@ -140,7 +130,6 @@ class PresenterDialog(QtWidgets.QDialog):
         light_layout.addRow("明るさ:", self.slider_intensity)
         layout.addWidget(light_group)
 
-        # --- 3. 画面(カメラ)回転演出 ---
         anim_group = QtWidgets.QGroupBox("カメラ旋回演出")
         anim_layout = QtWidgets.QVBoxLayout(anim_group)
         
@@ -177,7 +166,6 @@ class PresenterDialog(QtWidgets.QDialog):
 
         layout.addWidget(anim_group)
 
-        # --- 4. 閉じる ---
         btn_close = QtWidgets.QPushButton("閉じる")
         btn_close.clicked.connect(self.close)
         layout.addWidget(btn_close)
@@ -188,9 +176,6 @@ class PresenterDialog(QtWidgets.QDialog):
         view = self.get_active_view()
         if view: view.fitAll()
 
-    # ==========================================
-    # カメラ旋回＆ズーム アニメーション
-    # ==========================================
     def toggle_play(self, checked):
         if checked:
             if not check_has_valid_models():
@@ -318,9 +303,6 @@ class PresenterDialog(QtWidgets.QDialog):
                     
                 view.redraw()
 
-    # ==========================================
-    # その他ツール機能
-    # ==========================================
     def update_lighting(self):
         if not coin or not self.light_node: return
         x = math.cos(math.radians(self.slider_elevation.value())) * math.sin(math.radians(self.slider_azimuth.value()))
@@ -334,9 +316,12 @@ class PresenterDialog(QtWidgets.QDialog):
     def apply_preset_color(self):
         objs = self.get_target_objects()
         if not objs: return
-        colors = COLOR_PALETTES.get(self.combo_palette.currentText(), [(0.8, 0.8, 0.8)])
-        for idx, obj in enumerate(objs):
-            obj.ViewObject.ShapeColor = colors[idx % len(colors)]
+        # ★ 修正: 英語表示下でもキーミスマッチが起きないようインデックス数値指定に修正
+        palette_values = list(COLOR_PALETTES.values())
+        idx = self.combo_palette.currentIndex()
+        colors = palette_values[idx] if 0 <= idx < len(palette_values) else [(0.8, 0.8, 0.8)]
+        for i, obj in enumerate(objs):
+            obj.ViewObject.ShapeColor = colors[i % len(colors)]
             if hasattr(obj.ViewObject, "Shininess"): obj.ViewObject.Shininess = 0.85
         FreeCADGui.updateGui()
 
@@ -366,7 +351,6 @@ class PresenterDialog(QtWidgets.QDialog):
         self.anim_timer.stop()
         self.reset_camera_position()
         super().closeEvent(event)
-
 
 class Tool_ModelPresenter:
     def GetResources(self):

@@ -4,14 +4,9 @@ import math
 import FreeCAD
 import FreeCADGui
 import Part
-
 from Core.QtCompat import QtWidgets, QtGui, QtCore
-
 import Core.Progress as Progress
 
-# ==========================================
-# ?? 壺 設定ダイアログ（種類・プリセット選択機能付き）
-# ==========================================
 class VaseDialog(QtWidgets.QDialog):
     def __init__(self, parent=None):
         super(VaseDialog, self).__init__(parent)
@@ -20,7 +15,6 @@ class VaseDialog(QtWidgets.QDialog):
         
         layout = QtWidgets.QFormLayout(self)
         
-        # --- ?? プラスアルファ：壺の種類（プリセット）メニュー ---
         self.combo_preset = QtWidgets.QComboBox()
         self.combo_preset.addItems([
             "標準（デフォルト）",
@@ -57,7 +51,6 @@ class VaseDialog(QtWidgets.QDialog):
         self.spin_rib_depth.setRange(0.1, 10.0)
         self.spin_rib_depth.setSuffix(" mm")
 
-        # GUIレイアウトへの配置
         layout.addRow("<b>壺の種類（プリセット）:</b>", self.combo_preset)
         layout.addRow(QtWidgets.QLabel("<hr>"))
         layout.addRow("壺の高さ (Z軸):", self.spin_height)
@@ -76,15 +69,11 @@ class VaseDialog(QtWidgets.QDialog):
         btn_box.rejected.connect(self.reject)
         layout.addRow(btn_box)
         
-        # 起動時の初期値として「標準」の数値を適用
         self.apply_preset(0)
-        
-        # メニューの選択が切り替わったときに数値を自動変更するイベントを接続
         self.combo_preset.currentIndexChanged.connect(self.apply_preset)
 
     def apply_preset(self, index):
-        """ 選択されたメニューのインデックスに応じて数値を一括自動入力する関数 """
-        if index == 0:  # 標準（デフォルト）
+        if index == 0:
             self.spin_height.setValue(150.0)
             self.spin_max_r.setValue(60.0)
             self.spin_top_r.setValue(25.0)
@@ -92,28 +81,28 @@ class VaseDialog(QtWidgets.QDialog):
             self.spin_thick.setValue(4.0)
             self.spin_rib_count.setValue(60)
             self.spin_rib_depth.setValue(1.5)
-        elif index == 1:  # 縦長（スリム）
-            self.spin_height.setValue(240.0) # 高さをグッと伸ばす
-            self.spin_max_r.setValue(50.0)   # お腹を細く
+        elif index == 1:
+            self.spin_height.setValue(240.0)
+            self.spin_max_r.setValue(50.0)
             self.spin_top_r.setValue(20.0)
             self.spin_bot_r.setValue(30.0)
             self.spin_thick.setValue(4.0)
-            self.spin_rib_count.setValue(48)  # 細身に合わせて本数も調整
+            self.spin_rib_count.setValue(48)
             self.spin_rib_depth.setValue(1.2)
-        elif index == 2:  # 幅広（ふっくら）
-            self.spin_height.setValue(110.0) # 高さを抑える
-            self.spin_max_r.setValue(85.0)   # お腹を横にふっくら
-            self.spin_top_r.setValue(35.0)   # 口を広げる
+        elif index == 2:
+            self.spin_height.setValue(110.0)
+            self.spin_max_r.setValue(85.0)
+            self.spin_top_r.setValue(35.0)
             self.spin_bot_r.setValue(45.0)
             self.spin_thick.setValue(4.0)
-            self.spin_rib_count.setValue(72)  # 太さに合わせて本数を増やす
-            self.spin_rib_depth.setValue(2.0) # 模様も少しダイナミックに
-        elif index == 3:  # 小さめ（ミニ）
-            self.spin_height.setValue(80.0)  # 全体的にミニチュア化
+            self.spin_rib_count.setValue(72)
+            self.spin_rib_depth.setValue(2.0)
+        elif index == 3:
+            self.spin_height.setValue(80.0)
             self.spin_max_r.setValue(35.0)
             self.spin_top_r.setValue(15.0)
             self.spin_bot_r.setValue(20.0)
-            self.spin_thick.setValue(2.5)   # 小さいので壁も薄く
+            self.spin_thick.setValue(2.5)
             self.spin_rib_count.setValue(36)
             self.spin_rib_depth.setValue(0.8)
 
@@ -128,9 +117,6 @@ class VaseDialog(QtWidgets.QDialog):
             "rib_depth": self.spin_rib_depth.value()
         }
 
-# ==========================================
-# ?? ツール本体（超軽量・複合化モデル）
-# ==========================================
 class Tool_MakeVase:
     def GetResources(self):
         icon_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "icons", "vase.png").replace('\\', '/')
@@ -162,113 +148,92 @@ class Tool_MakeVase:
             QtWidgets.QMessageBox.warning(None, "エラー", "肉厚が半径に対して厚すぎます。")
             return
 
-        bar = Progress.ProgressManager()
-        bar.start(title="スパイラル壺工場", initial_text="ステップ1: 壺本体を生成中...")
-        
-        doc.openTransaction("CreateSpiralVase")
-        
-        try:
-            # --------------------------------------------------
-            # ① 普通に「ツルツルの壺本体」を作る
-            # --------------------------------------------------
-            p_bot_out = FreeCAD.Vector(bot_r, 0, 0)
-            p_mid_out = FreeCAD.Vector(max_r, 0, h * 0.4)
-            p_top_out = FreeCAD.Vector(top_r, 0, h)
+        with Progress.ProgressManager() as bar:
+            bar.start(title="スパイラル壺工場", initial_text="ステップ1: 壺本体を生成中...")
             
-            curve_out = Part.BSplineCurve()
-            curve_out.buildFromPoles([p_bot_out, p_mid_out, p_top_out])
-            edge_out = curve_out.toShape()
+            doc.openTransaction("CreateSpiralVase")
             
-            p_top_in = FreeCAD.Vector(top_r - thick, 0, h)
-            p_mid_in = FreeCAD.Vector(max_r - thick, 0, h * 0.4)
-            p_bot_in = FreeCAD.Vector(bot_r - thick, 0, thick)
-            p_center_in = FreeCAD.Vector(0, 0, thick)
-            p_center_bot = FreeCAD.Vector(0, 0, 0)
-            
-            curve_in = Part.BSplineCurve()
-            curve_in.buildFromPoles([p_top_in, p_mid_in, p_bot_in])
-            edge_in = curve_in.toShape()
-            
-            edge_top_lip   = Part.makeLine(p_top_out, p_top_in)
-            edge_to_center = Part.makeLine(p_bot_in, p_center_in)
-            edge_down_axis = Part.makeLine(p_center_in, p_center_bot)
-            edge_bot_line  = Part.makeLine(p_center_bot, p_bot_out)
-            
-            wire_vase = Part.Wire([edge_out, edge_top_lip, edge_in, edge_to_center, edge_down_axis, edge_bot_line])
-            face_vase = Part.Face(wire_vase)
-            
-            base_vase = face_vase.revolve(FreeCAD.Vector(0,0,0), FreeCAD.Vector(0,0,1), 360.0)
+            try:
+                p_bot_out = FreeCAD.Vector(bot_r, 0, 0)
+                p_mid_out = FreeCAD.Vector(max_r, 0, h * 0.4)
+                p_top_out = FreeCAD.Vector(top_r, 0, h)
+                
+                curve_out = Part.BSplineCurve()
+                curve_out.buildFromPoles([p_bot_out, p_mid_out, p_top_out])
+                edge_out = curve_out.toShape()
+                
+                p_top_in = FreeCAD.Vector(top_r - thick, 0, h)
+                p_mid_in = FreeCAD.Vector(max_r - thick, 0, h * 0.4)
+                p_bot_in = FreeCAD.Vector(bot_r - thick, 0, thick)
+                p_center_in = FreeCAD.Vector(0, 0, thick)
+                p_center_bot = FreeCAD.Vector(0, 0, 0)
+                
+                curve_in = Part.BSplineCurve()
+                curve_in.buildFromPoles([p_top_in, p_mid_in, p_bot_in])
+                edge_in = curve_in.toShape()
+                
+                edge_top_lip   = Part.makeLine(p_top_out, p_top_in)
+                edge_to_center = Part.makeLine(p_bot_in, p_center_in)
+                edge_down_axis = Part.makeLine(p_center_in, p_center_bot)
+                edge_bot_line  = Part.makeLine(p_center_bot, p_bot_out)
+                
+                wire_vase = Part.Wire([edge_out, edge_top_lip, edge_in, edge_to_center, edge_down_axis, edge_bot_line])
+                face_vase = Part.Face(wire_vase)
+                
+                base_vase = face_vase.revolve(FreeCAD.Vector(0,0,0), FreeCAD.Vector(0,0,1), 360.0)
 
-            # --------------------------------------------------
-            # ② リブ（スパイラル）を「1本だけ」ロフトで生成
-            # --------------------------------------------------
-            bar.update(40, "ステップ2: 螺旋模様の刃を1本生成中...")
-            
-            slices = 40
-            turns = 0.25 
-            rib_profiles = []
-            
-            for s in range(slices + 1):
-                t = float(s) / slices
-                z = t * h
+                bar.update(40, "ステップ2: 螺旋模様の刃を1本生成中...")
                 
-                r_base = (1-t)**2 * bot_r + 2*(1-t)*t * max_r + t**2 * top_r
-                a = t * (turns * 2 * math.pi)
+                slices = 40
+                turns = 0.25 
+                rib_profiles = []
                 
-                w = (math.pi / rib_count) * 0.8
+                for s in range(slices + 1):
+                    t = float(s) / slices
+                    z = t * h
+                    r_base = (1-t)**2 * bot_r + 2*(1-t)*t * max_r + t**2 * top_r
+                    a = t * (turns * 2 * math.pi)
+                    w = (math.pi / rib_count) * 0.8
+                    r_in = r_base - 0.5 
+                    r_out = r_base + rib_depth
+                    
+                    p1 = FreeCAD.Vector(r_in * math.cos(a - w), r_in * math.sin(a - w), z)
+                    p2 = FreeCAD.Vector(r_out * math.cos(a), r_out * math.sin(a), z)
+                    p3 = FreeCAD.Vector(r_in * math.cos(a + w), r_in * math.sin(a + w), z)
+                    
+                    rib_profiles.append(Part.makePolygon([p1, p2, p3, p1]))
                 
-                r_in = r_base - 0.5 
-                r_out = r_base + rib_depth
-                
-                p1 = FreeCAD.Vector(r_in * math.cos(a - w), r_in * math.sin(a - w), z)
-                p2 = FreeCAD.Vector(r_out * math.cos(a), r_out * math.sin(a), z)
-                p3 = FreeCAD.Vector(r_in * math.cos(a + w), r_in * math.sin(a + w), z)
-                
-                rib_profiles.append(Part.makePolygon([p1, p2, p3, p1]))
-            
-            single_rib = Part.makeLoft(rib_profiles, True, False)
+                single_rib = Part.makeLoft(rib_profiles, True, False)
 
-            # --------------------------------------------------
-            # ③ 指定された本数分、円周状にコピー（配列）
-            # --------------------------------------------------
-            bar.update(70, "ステップ3: 模様を円周上に一斉配置中...")
-            
-            all_parts = [base_vase]
-            
-            for i in range(rib_count):
-                angle = (360.0 / rib_count) * i
-                rot = FreeCAD.Rotation(FreeCAD.Vector(0,0,1), angle)
+                bar.update(70, "ステップ3: 模様を円周上に一斉配置中...")
                 
-                rib_copy = single_rib.copy()
-                rib_copy.Placement.Rotation = rot
-                all_parts.append(rib_copy)
+                all_parts = [base_vase]
+                for i in range(rib_count):
+                    angle = (360.0 / rib_count) * i
+                    rot = FreeCAD.Rotation(FreeCAD.Vector(0,0,1), angle)
+                    rib_copy = single_rib.copy()
+                    rib_copy.Placement.Rotation = rot
+                    all_parts.append(rib_copy)
 
-            # --------------------------------------------------
-            # ④ 全部「複合化（Compound）」にまとめて出力
-            # --------------------------------------------------
-            bar.update(90, "ステップ4: 複合化してデータを出力中...")
-            final_shape = Part.makeCompound(all_parts)
+                bar.update(90, "ステップ4: 複合化してデータを出力中...")
+                final_shape = Part.makeCompound(all_parts)
+                
+            except Exception as err:
+                from FreeCAD import Console
+                Console.PrintError(f"スパイラル壺の生成に失敗しました: {str(err)}\n")
+                return
+
+            bar.update(95, "完了処理中...")
             
-        except Exception as err:
-            from FreeCAD import Console
-            Console.PrintError(f"スパイラル壺の生成に失敗しました: {str(err)}\n")
-            bar.close()
-            return
+            obj = doc.addObject("Part::Feature", "SpiralVase")
+            obj.Shape = final_shape
+            obj.ViewObject.ShapeColor = (0.3, 0.8, 0.6)
+            obj.ViewObject.DisplayMode = "Shaded"
+            
+            bar.update(100, "生成が完了しました！")
+            
+            doc.commitTransaction()
+            doc.recompute()
+            FreeCADGui.activeView().fitAll()
 
-        bar.update(95, "完了処理中...")
-        
-        obj = doc.addObject("Part::Feature", "SpiralVase")
-        obj.Shape = final_shape
-        
-        obj.ViewObject.ShapeColor = (0.3, 0.8, 0.6)
-        obj.ViewObject.DisplayMode = "Shaded"
-        
-        bar.update(100, "生成が完了しました！")
-        bar.close()
-        
-        doc.commitTransaction()
-        doc.recompute()
-        FreeCADGui.activeView().fitAll()
-
-# コマンド登録
 FreeCADGui.addCommand('Ring_Vase', Tool_MakeVase())

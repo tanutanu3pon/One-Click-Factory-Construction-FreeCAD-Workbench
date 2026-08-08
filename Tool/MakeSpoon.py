@@ -9,9 +9,6 @@ from Core.QtCompat import QtWidgets, QtGui, QtCore
 
 import Core.Progress as Progress
 
-# ==========================================
-# ??? 窓①：スプーンの「皿（ヘッド）」設定画面
-# ==========================================
 class SpoonDialog(QtWidgets.QDialog):
     def __init__(self, parent=None):
         super(SpoonDialog, self).__init__(parent)
@@ -60,9 +57,6 @@ class SpoonDialog(QtWidgets.QDialog):
             "wall": self.spin_wall.value()
         }
 
-# ==========================================
-# ??? 窓②：スプーンの「柄」と「仕上げ」設定画面
-# ==========================================
 class HandleDialog(QtWidgets.QDialog):
     def __init__(self, parent=None):
         super(HandleDialog, self).__init__(parent)
@@ -86,7 +80,6 @@ class HandleDialog(QtWidgets.QDialog):
         self.spin_h_thick.setValue(3.0)
         self.spin_h_thick.setSuffix(" mm")
         
-        # 【変更】柄のフィレットは廃止し、口が触れるフチのみのRに変更
         self.spin_fillet = QtWidgets.QDoubleSpinBox()
         self.spin_fillet.setRange(0.0, 5.0)
         self.spin_fillet.setValue(0.5)
@@ -115,9 +108,6 @@ class HandleDialog(QtWidgets.QDialog):
             "fillet": self.spin_fillet.value()
         }
 
-# ==========================================
-# ??? ツール本体
-# ==========================================
 class Tool_MakeSpoon:
     def GetResources(self):
         icon_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "icons", "spoon.png").replace('\\', '/')
@@ -156,143 +146,117 @@ class Tool_MakeSpoon:
             QtWidgets.QMessageBox.warning(None, "エラー", "肉厚が大きすぎるため、内側をくり抜くスペースがありません。")
             return
 
-        bar = Progress.ProgressManager()
-        bar.start(title="スプーン製造ライン", initial_text="皿を計算中...")
-        
-        doc.openTransaction("CreateCompleteSpoon")
-        
-        # --------------------------------------------------
-        # ① スプーンの皿を生成
-        # --------------------------------------------------
-        base_sphere = Part.makeSphere(1.0)
-        
-        mat_base = FreeCAD.Matrix()
-        mat_base.scale(width / 2.0, length / 2.0, depth / 2.0)
-        outer_ellipse = base_sphere.transformGeometry(mat_base)
-        
-        mat_inner = FreeCAD.Matrix()
-        mat_inner.scale((width - wall*2)/2.0, (length - wall*2)/2.0, depth/2.0)
-        inner_ellipse = base_sphere.transformGeometry(mat_inner)
-        inner_ellipse.translate(FreeCAD.Vector(0, 0, wall))
-        
-        hollow_bowl = outer_ellipse.cut(inner_ellipse)
-        
-        box_size = max(width, length) + 20.0
-        cutter_box = Part.makeBox(box_size, box_size, box_size)
-        cutter_box.translate(FreeCAD.Vector(-box_size / 2.0, -box_size / 2.0, 0))
-        final_spoon_bowl = hollow_bowl.cut(cutter_box)
-
-        # --------------------------------------------------
-        # ② 【最適化】皿の口が触れる「フチ」のみを滑らかにする
-        # --------------------------------------------------
-        if fillet_r > 0.0:
-            bar.update(30, "口が触れるフチのみを滑らかに加工中...")
-            # カッターで切断した「Z=0」の平面上にあるエッジ（線の集まり）だけを抽出
-            top_edges = []
-            for e in final_spoon_bowl.Edges:
-                if abs(e.BoundBox.ZMax) < 0.01 and abs(e.BoundBox.ZMin) < 0.01:
-                    top_edges.append(e)
+        with Progress.ProgressManager() as bar:
+            bar.start(title="スプーン製造ライン", initial_text="皿を計算中...")
             
-            if top_edges:
-                try:
-                    # 肉厚を突き破らないように安全な最大R値を自動計算
-                    safe_r = min(fillet_r, wall / 2.0 - 0.05)
-                    f_bowl = final_spoon_bowl.makeFillet(safe_r, top_edges)
-                    if not f_bowl.isNull():
-                        final_spoon_bowl = f_bowl
-                except Exception as e:
-                    from FreeCAD import Console
-                    Console.PrintWarning(f"フチの角丸処理をスキップしました: {str(e)}\n")
-        
-        # --------------------------------------------------
-        # ③ 横からのシルエット（S字カーブ）を生成
-        # --------------------------------------------------
-        bar.update(45, "横からのS字シルエットを生成中...")
-        
-        # 柄が皿の内側に突き抜けないよう、肉厚の80%だけめり込ませる
-        y_neck = -length / 2.0 + (wall * 0.8)
-        table_z = -depth / 2.0
-        
-        t0 = FreeCAD.Vector(0, y_neck, 0)
-        t1 = FreeCAD.Vector(0, y_neck - h_length * 0.25, h_length * 0.15)
-        t2 = FreeCAD.Vector(0, y_neck - h_length * 0.7, table_z + h_thick)
-        t3 = FreeCAD.Vector(0, y_neck - h_length, table_z + h_thick)
-        
-        curve_top = Part.BezierCurve()
-        curve_top.setPoles([t0, t1, t2, t3])
-        edge_top = curve_top.toShape()
-        
-        b3 = FreeCAD.Vector(0, y_neck - h_length, table_z)
-        b2 = FreeCAD.Vector(0, y_neck - h_length * 0.7, table_z)
-        b1 = FreeCAD.Vector(0, y_neck - h_length * 0.25, h_length * 0.15 - h_thick)
-        b0 = FreeCAD.Vector(0, y_neck, -h_thick)
-        
-        curve_bottom = Part.BezierCurve()
-        curve_bottom.setPoles([b3, b2, b1, b0])
-        edge_bottom = curve_bottom.toShape()
-        
-        edge_neck = Part.makeLine(b0, t0)
-        edge_tail = Part.makeLine(t3, b3)
-        
-        side_wire = Part.Wire([edge_top, edge_tail, edge_bottom, edge_neck])
-        side_face = Part.Face(side_wire)
-        
-        max_w = h_width * 3.0
-        side_solid = side_face.extrude(FreeCAD.Vector(max_w, 0, 0))
-        side_solid.translate(FreeCAD.Vector(-max_w / 2.0, 0, 0))
+            doc.openTransaction("CreateCompleteSpoon")
+            
+            base_sphere = Part.makeSphere(1.0)
+            
+            mat_base = FreeCAD.Matrix()
+            mat_base.scale(width / 2.0, length / 2.0, depth / 2.0)
+            outer_ellipse = base_sphere.transformGeometry(mat_base)
+            
+            mat_inner = FreeCAD.Matrix()
+            mat_inner.scale((width - wall*2)/2.0, (length - wall*2)/2.0, depth/2.0)
+            inner_ellipse = base_sphere.transformGeometry(mat_inner)
+            inner_ellipse.translate(FreeCAD.Vector(0, 0, wall))
+            
+            hollow_bowl = outer_ellipse.cut(inner_ellipse)
+            
+            box_size = max(width, length) + 20.0
+            cutter_box = Part.makeBox(box_size, box_size, box_size)
+            cutter_box.translate(FreeCAD.Vector(-box_size / 2.0, -box_size / 2.0, 0))
+            final_spoon_bowl = hollow_bowl.cut(cutter_box)
 
-        # --------------------------------------------------
-        # ④ 上からのシルエット（持ち手の形状）を生成し抽出
-        # --------------------------------------------------
-        bar.update(60, "上からのシルエットを生成中...")
-        
-        w_n = h_width / 2.0
-        w_t = (h_width * 1.5) / 2.0
-        
-        pt0 = FreeCAD.Vector(-w_n, y_neck, 0)
-        pt1 = FreeCAD.Vector(w_n, y_neck, 0)
-        pt2 = FreeCAD.Vector(w_t, y_neck - h_length, 0)
-        pt3 = FreeCAD.Vector(-w_t, y_neck - h_length, 0)
-        
-        top_poly = Part.makePolygon([pt0, pt1, pt2, pt3, pt0])
-        top_face = Part.Face(Part.Wire(top_poly))
-        
-        z_min = table_z - 10.0
-        z_height = h_length * 0.5 + 20.0
-        top_solid = top_face.extrude(FreeCAD.Vector(0, 0, z_height))
-        top_solid.translate(FreeCAD.Vector(0, 0, z_min))
+            if fillet_r > 0.0:
+                bar.update(30, "口が触れるフチのみを滑らかに加工中...")
+                top_edges = []
+                for e in final_spoon_bowl.Edges:
+                    if abs(e.BoundBox.ZMax) < 0.01 and abs(e.BoundBox.ZMin) < 0.01:
+                        top_edges.append(e)
+                
+                if top_edges:
+                    try:
+                        safe_r = min(fillet_r, wall / 2.0 - 0.05)
+                        f_bowl = final_spoon_bowl.makeFillet(safe_r, top_edges)
+                        if not f_bowl.isNull():
+                            final_spoon_bowl = f_bowl
+                    except Exception as e:
+                        from FreeCAD import Console
+                        Console.PrintWarning(f"フチの角丸処理をスキップしました: {str(e)}\n")
+            
+            bar.update(45, "横からのS字シルエットを生成中...")
+            
+            y_neck = -length / 2.0 + (wall * 0.8)
+            table_z = -depth / 2.0
+            
+            t0 = FreeCAD.Vector(0, y_neck, 0)
+            t1 = FreeCAD.Vector(0, y_neck - h_length * 0.25, h_length * 0.15)
+            t2 = FreeCAD.Vector(0, y_neck - h_length * 0.7, table_z + h_thick)
+            t3 = FreeCAD.Vector(0, y_neck - h_length, table_z + h_thick)
+            
+            curve_top = Part.BezierCurve()
+            curve_top.setPoles([t0, t1, t2, t3])
+            edge_top = curve_top.toShape()
+            
+            b3 = FreeCAD.Vector(0, y_neck - h_length, table_z)
+            b2 = FreeCAD.Vector(0, y_neck - h_length * 0.7, table_z)
+            b1 = FreeCAD.Vector(0, y_neck - h_length * 0.25, h_length * 0.15 - h_thick)
+            b0 = FreeCAD.Vector(0, y_neck, -h_thick)
+            
+            curve_bottom = Part.BezierCurve()
+            curve_bottom.setPoles([b3, b2, b1, b0])
+            edge_bottom = curve_bottom.toShape()
+            
+            edge_neck = Part.makeLine(b0, t0)
+            edge_tail = Part.makeLine(t3, b3)
+            
+            side_wire = Part.Wire([edge_top, edge_tail, edge_bottom, edge_neck])
+            side_face = Part.Face(side_wire)
+            
+            max_w = h_width * 3.0
+            side_solid = side_face.extrude(FreeCAD.Vector(max_w, 0, 0))
+            side_solid.translate(FreeCAD.Vector(-max_w / 2.0, 0, 0))
 
-        handle_solid = side_solid.common(top_solid)
+            bar.update(60, "上からのシルエットを生成中...")
+            
+            w_n = h_width / 2.0
+            w_t = (h_width * 1.5) / 2.0
+            
+            pt0 = FreeCAD.Vector(-w_n, y_neck, 0)
+            pt1 = FreeCAD.Vector(w_n, y_neck, 0)
+            pt2 = FreeCAD.Vector(w_t, y_neck - h_length, 0)
+            pt3 = FreeCAD.Vector(-w_t, y_neck - h_length, 0)
+            
+            top_poly = Part.makePolygon([pt0, pt1, pt2, pt3, pt0])
+            top_face = Part.Face(Part.Wire(top_poly))
+            
+            z_min = table_z - 10.0
+            z_height = h_length * 0.5 + 20.0
+            top_solid = top_face.extrude(FreeCAD.Vector(0, 0, z_height))
+            top_solid.translate(FreeCAD.Vector(0, 0, z_min))
 
-        # --------------------------------------------------
-        # ⑤ 【最重要】パズル結合方式（めり込み減算 → 結合）
-        # --------------------------------------------------
-        bar.update(75, "皿から柄のめり込みを減算（受け皿作成）中...")
-        # ユーザー指定の安定化処理：皿から柄の形を一度くり抜いて、ピッタリはまる受け穴を作る
-        socket_bowl = final_spoon_bowl.cut(handle_solid)
+            handle_solid = side_solid.common(top_solid)
 
-        bar.update(85, "皿と柄をピッタリはめ込んでフュージョン中...")
-        # 隙間なく、体積の重複（オーバーラップ）も無く完璧に結合
-        final_shape = socket_bowl.fuse(handle_solid)
+            bar.update(75, "皿から柄のめり込みを減算（受け皿作成）中...")
+            socket_bowl = final_spoon_bowl.cut(handle_solid)
 
-        # --------------------------------------------------
-        # ⑥ 出力
-        # --------------------------------------------------
-        bar.update(95, "FreeCADへ登録中...")
-        
-        obj = doc.addObject("Part::Feature", "CompleteSpoon")
-        obj.Shape = final_shape
-        obj.ViewObject.ShapeColor = (0.5, 0.45, 0.4)
-        obj.ViewObject.DisplayMode = "Shaded"
-        
-        bar.update(100, "すべての工程が完了しました！")
-        bar.close()
-        
-        doc.commitTransaction()
-        doc.recompute()
-        FreeCADGui.activeView().fitAll()
-        
-        FreeCADGui.activeView().viewRight()
+            bar.update(85, "皿と柄をピッタリはめ込んでフュージョン中...")
+            final_shape = socket_bowl.fuse(handle_solid)
 
-# コマンド登録
+            bar.update(95, "FreeCADへ登録中...")
+            
+            obj = doc.addObject("Part::Feature", "CompleteSpoon")
+            obj.Shape = final_shape
+            obj.ViewObject.ShapeColor = (0.5, 0.45, 0.4)
+            obj.ViewObject.DisplayMode = "Shaded"
+            
+            bar.update(100, "すべての工程が完了しました！")
+            
+            doc.commitTransaction()
+            doc.recompute()
+            FreeCADGui.activeView().fitAll()
+            FreeCADGui.activeView().viewRight()
+
 FreeCADGui.addCommand('Ring_MakeSpoon', Tool_MakeSpoon())

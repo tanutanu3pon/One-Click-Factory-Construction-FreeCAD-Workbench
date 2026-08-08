@@ -1,17 +1,11 @@
 # -*- coding: utf-8 -*-
-# Tool/MakeWall.py
 import os
 import FreeCAD
 import FreeCADGui
 import Part
-
 from Core.QtCompat import QtWidgets, QtGui, QtCore
-
 import Core.Progress as Progress
 
-# ========================================================
-# 【最初に出る窓】設計方針の選択ダイアログ
-# ========================================================
 class ModeSelectDialog(QtWidgets.QDialog):
     def __init__(self, parent=None):
         super(ModeSelectDialog, self).__init__(parent)
@@ -40,15 +34,11 @@ class ModeSelectDialog(QtWidgets.QDialog):
     def get_selected_mode(self):
         return 1 if self.radio_uniform.isChecked() else 2
 
-
-# ========================================================
-# 【窓①】表面の勾配をピシッと統一する専用の入力窓
-# ========================================================
 class UniformWallDialog(QtWidgets.QDialog):
     def __init__(self, parent=None):
         super(UniformWallDialog, self).__init__(parent)
         self.setWindowTitle("重力式擁壁・①勾配統一工場")
-        self.resize(400, 480) # 項目追加に伴い少し縦幅を拡張
+        self.resize(400, 480)
         
         layout = QtWidgets.QFormLayout(self)
         MAX_MM = 100000
@@ -105,7 +95,6 @@ class UniformWallDialog(QtWidgets.QDialog):
         ])
         layout.addRow("基準線の通し方:", self.combo_align)
 
-        # ★初期位置オフセット設定の追加
         layout.addRow(QtWidgets.QLabel("<hr><h3>【初期位置設定 (一番最初のみ適用)】</h3>"))
         self.check_origin = QtWidgets.QCheckBox("原点から開始する")
         self.check_origin.setChecked(True)
@@ -125,7 +114,6 @@ class UniformWallDialog(QtWidgets.QDialog):
         self.spin_offset_z.setEnabled(False)
         layout.addRow("Z軸マイナス方向へのオフセット:", self.spin_offset_z)
 
-        # チェックボックスの状態変化で有効・無効を連動
         self.check_origin.toggled.connect(lambda checked: self.spin_offset_x.setEnabled(not checked))
         self.check_origin.toggled.connect(lambda checked: self.spin_offset_z.setEnabled(not checked))
 
@@ -157,15 +145,11 @@ class UniformWallDialog(QtWidgets.QDialog):
             "offset_z": self.spin_offset_z.value()
         }
 
-
-# ========================================================
-# 【窓②】ねじれ擁壁（すべての数値を自由入力）の入力窓
-# ========================================================
 class TwistWallDialog(QtWidgets.QDialog):
     def __init__(self, parent=None):
         super(TwistWallDialog, self).__init__(parent)
         self.setWindowTitle("重力式擁壁・②自由変断面工場")
-        self.resize(400, 500) # 項目追加に伴い少し縦幅を拡張
+        self.resize(400, 500)
         
         layout = QtWidgets.QFormLayout(self)
         MAX_MM = 100000
@@ -225,7 +209,6 @@ class TwistWallDialog(QtWidgets.QDialog):
         ])
         layout.addRow("基準線の通し方:", self.combo_align)
 
-        # ★初期位置オフセット設定の追加
         layout.addRow(QtWidgets.QLabel("<hr><h3>【初期位置設定 (一番最初のみ適用)】</h3>"))
         self.check_origin = QtWidgets.QCheckBox("原点から開始する")
         self.check_origin.setChecked(True)
@@ -280,10 +263,6 @@ class TwistWallDialog(QtWidgets.QDialog):
             "offset_z": self.spin_offset_z.value()
         }
 
-
-# ========================================================
-# メインツール制御クラス
-# ========================================================
 class Tool_MakeWall:
     def GetResources(self):
         icon_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "icons", "wall.png").replace('\\', '/')
@@ -322,7 +301,7 @@ class Tool_MakeWall:
                 
             max_end_y = 0.0        
             current_start_x = 0.0   
-            current_start_z = 0.0  # ★Z軸の開始点を追記
+            current_start_z = 0.0  
             max_idx = 0            
 
             for obj in doc.Objects:
@@ -330,34 +309,31 @@ class Tool_MakeWall:
                     try:
                         idx = int(obj.Name.split("_")[-1])
                         if idx > max_idx: max_idx = idx
-                    except:
+                    except Exception:
                         pass
                     if hasattr(obj, "EndOffsetY"):
                         if obj.EndOffsetY > max_end_y:
                             max_end_y = obj.EndOffsetY
                             if hasattr(obj, "EndOffsetX"):
                                 current_start_x = obj.EndOffsetX
-                            if hasattr(obj, "EndOffsetZ"): # ★既存データから前回のZ底面をサルベージ
+                            if hasattr(obj, "EndOffsetZ"):
                                 current_start_z = obj.EndOffsetZ
 
             next_idx = max_idx + 1  
             total_length = max_end_y 
 
-            # ★一番最初（新規スパン）の場合のみ、ユーザー指定のマイナスオフセットを初期位置として適用
             if next_idx == 1:
                 if not vals["is_origin"]:
                     current_start_x = -float(vals["offset_x"])
                     current_start_z = -float(vals["offset_z"])
 
-            # 1. 手前側（Y=0）の断面ワイヤーを作成
             bar.update(20, f"第{next_idx}区間：手前側断面を構築中...")
-            p1 = FreeCAD.Vector(current_start_x, 0, current_start_z) # ★Z座標を0固定から変数へ変更
+            p1 = FreeCAD.Vector(current_start_x, 0, current_start_z)
             p2 = FreeCAD.Vector(current_start_x + vals["b_start"], 0, current_start_z)
             p3 = FreeCAD.Vector(current_start_x + vals["t_start"], 0, current_start_z + vals["h_start"])
             p4 = FreeCAD.Vector(current_start_x, 0, current_start_z + vals["h_start"])
             poly_start = Part.makePolygon([p1, p2, p3, p4, p1])
 
-            # 2. アライメント（基準線）に応じた奥側（Y=L）のX軸オフセット計算
             L = vals["length"]
             local_offset_x = 0
             if vals["align_mode"] == 1:
@@ -365,24 +341,20 @@ class Tool_MakeWall:
             
             next_end_x = current_start_x + local_offset_x
 
-            # 3. 奥側（Y=L）の断面ワイヤーを作成
             bar.update(40, f"第{next_idx}区間：奥側断面を調整中...")
-            q1 = FreeCAD.Vector(next_end_x, L, current_start_z) # ★Z座標を0固定から変数へ変更
+            q1 = FreeCAD.Vector(next_end_x, L, current_start_z)
             q2 = FreeCAD.Vector(next_end_x + vals["b_end"], L, current_start_z)
             q3 = FreeCAD.Vector(next_end_x + vals["t_end"], L, current_start_z + vals["h_end"])
             q4 = FreeCAD.Vector(next_end_x, L, current_start_z + vals["h_end"])
             poly_end = Part.makePolygon([q1, q2, q3, q4, q1])
 
-            # 4. ロフト機能で繋いでソリッド化
             bar.update(60, "新スパンをロフト接続（ソリッド化）中...")
             solid_wall = Part.makeLoft([poly_start, poly_end], True)
             
-            # 5. ガイド類のみをクリーニング
             for old_name in ["GL_Ground_Plane", "Axis_X_Red", "Axis_Y_Green", "Axis_Z_Blue"]:
                 old_obj = doc.getObject(old_name)
                 if old_obj: doc.removeObject(old_obj.Name)
                 
-            # 6. 今回の新しい擁壁オブジェクトを「連番名」で新規追加
             wall_name = f"Gravity_Retaining_Wall_{next_idx}"
             obj = doc.addObject("Part::Feature", wall_name)
             obj.Shape = solid_wall
@@ -392,12 +364,9 @@ class Tool_MakeWall:
             obj.ViewObject.ShapeColor = (0.7, 0.7, 0.7)
             obj.ViewObject.DisplayMode = "Shaded"
             
-            # ========================================================
-            # ★拡張：プロパティ（メタデータ）を「Construction」欄へ全埋め込み
-            # ========================================================
             obj.addProperty("App::PropertyFloat", "EndOffsetX", "Construction")
             obj.addProperty("App::PropertyFloat", "EndOffsetY", "Construction")
-            obj.addProperty("App::PropertyFloat", "EndOffsetZ", "Construction") # ★Z情報もBIMとして保存
+            obj.addProperty("App::PropertyFloat", "EndOffsetZ", "Construction")
             
             obj.addProperty("App::PropertyLength", "WallLength", "Construction")
             obj.addProperty("App::PropertyLength", "HeightStart", "Construction")
@@ -409,7 +378,7 @@ class Tool_MakeWall:
             
             obj.EndOffsetX = next_end_x
             obj.EndOffsetY = total_length + L
-            obj.EndOffsetZ = current_start_z # ★保存
+            obj.EndOffsetZ = current_start_z
             obj.WallLength = L
             obj.HeightStart = vals["h_start"]
             obj.BaseWidthStart = vals["b_start"]
@@ -417,25 +386,20 @@ class Tool_MakeWall:
             obj.HeightEnd = vals["h_end"]
             obj.BaseWidthEnd = vals["b_end"]
             obj.TopWidthEnd = vals["t_end"]
-            # ========================================================
             
-            # 7. 全体の総延長に合わせて、巨大視覚支援（軸と地面）を再スケール生成
             bar.update(85, "総延長に合わせてGL環境を拡大再構築中...")
             
             max_dim = max(vals["h_start"], vals["h_end"], vals["b_start"], vals["b_end"], total_length + L)
             guide_size = max_dim * 1.3
             
-            # 半透明GL地面プレート
             ground_shape = Part.makeBox(guide_size * 2, guide_size * 2, 1)
             ground_obj = doc.addObject("Part::Feature", "GL_Ground_Plane")
             ground_obj.Shape = ground_shape
-            # オフセットされた初期底面(current_start_z)よりもさらに少し下をGL面とするよう補正
             ground_obj.Placement = FreeCAD.Placement(FreeCAD.Vector(-guide_size * 0.5, -guide_size * 0.2, current_start_z - 10), FreeCAD.Rotation())
             ground_obj.ViewObject.ShapeColor = (0.45, 0.42, 0.38)
             ground_obj.ViewObject.Transparency = 70
             ground_obj.ViewObject.DisplayMode = "Shaded"
 
-            # 極太カラー3軸
             ax_x = Part.LineSegment(FreeCAD.Vector(0, 0, 0), FreeCAD.Vector(guide_size, 0, 0)).toShape()
             obj_x = doc.addObject("Part::Feature", "Axis_X_Red")
             obj_x.Shape = ax_x

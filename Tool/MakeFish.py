@@ -1,14 +1,11 @@
 # -*- coding: utf-8 -*-
-# Tool/MakeFish.py
 import os
 import math
 import FreeCAD
 import FreeCADGui
 import Part
-
 from Core.QtCompat import QtWidgets, QtGui, QtCore
 
-# 進捗マネージャーの読み込み
 try:
     from Core.Progress import ProgressManager
 except ImportError:
@@ -18,12 +15,9 @@ except ImportError:
         def update(self, percent, text=None): pass
         def close(self): pass
 
-
 def get_selected_spine_shape():
-    """ 選択されたオブジェクトの中から「背骨の線(Wire / Edge / Sketch)」を取得する """
     selected = FreeCADGui.Selection.getSelection()
-    if not selected:
-        return None
+    if not selected: return None
 
     for obj in selected:
         if hasattr(obj, 'Shape') and obj.Shape and not obj.Shape.isNull():
@@ -34,23 +28,14 @@ def get_selected_spine_shape():
                 return Part.Wire(shape.Edges)
     return None
 
-
 def smooth_step_val(t, t0, t1, v0, v1):
-    """
-    t0 から t1 の間を v0 から v1 へSmoothstep (3x^2 - 2x^3) で単調変化させる
-    """
     if t <= t0: return v0
     if t >= t1: return v1
     x = (t - t0) / float(t1 - t0)
     s = x * x * (3.0 - 2.0 * x)
     return v0 + (v1 - v0) * s
 
-
 def get_non_uniform_t_list(num_sections, mode_type):
-    """
-    【非等間隔サンプリング】
-    変形の激しい頭部と尾部の断面間隔を詰め、滑らかな流線型を生成する
-    """
     if mode_type == 0:
         return [i / float(num_sections - 1) for i in range(num_sections)]
 
@@ -67,103 +52,68 @@ def get_non_uniform_t_list(num_sections, mode_type):
 
     return t_list
 
-
 def get_profile_radii(t, mode_type, spine_length, user_bulge):
-    """
-    【上下非対称（背側 Ry_top と 腹側 Ry_bottom 独立分離）プロファイル計算】
-    イラスト写真の魚体シルエット（おでこの上がり・タラ腹など）を正確にコントロールする
-    """
-    r_min = 0.01  # 最小許容値
+    r_min = 0.01
 
     if mode_type == 0:
-        # ① 単純ロフト：真円断面（上下対称）
         half_w = user_bulge / 2.0
         r = r_min + (half_w - r_min) * math.sin(math.pi * t)
         return max(r, r_min), max(r, r_min), max(r, r_min)
 
-    # -------------------------------------------------------------
-    # 魚種ごとの上下分離パラメータ定義
-    # (背側最大高, 腹側最大高, 最大厚み, 背側Peak, 腹側Peak, くびれ位置)
-    # -------------------------------------------------------------
     if mode_type == 1:
-        # ② たい: おでこ?背中が超盛り上がり(Top:0.28L), 腹側は控えめ(Bottom:0.14L)
         max_h_top, max_h_bot, max_w = spine_length * 0.28, spine_length * 0.14, spine_length * 0.13
         t_pk_top, t_pk_bot, t_w = 0.32, 0.38, 0.75
         ht_mouth, ht_waist, ht_tail = 0.08, 0.18, 0.55
         hb_mouth, hb_waist, hb_tail = 0.06, 0.16, 0.50
         w_mouth, w_waist, w_tail = 0.05, 0.18, 0.04
-
     elif mode_type == 2:
-        # ③ ぶり: バランスの良い紡錘形 (やや背側が高め)
         max_h_top, max_h_bot, max_w = spine_length * 0.13, spine_length * 0.11, spine_length * 0.13
         t_pk_top, t_pk_bot, t_w = 0.38, 0.36, 0.76
         ht_mouth, ht_waist, ht_tail = 0.08, 0.22, 0.50
         hb_mouth, hb_waist, hb_tail = 0.06, 0.20, 0.48
         w_mouth, w_waist, w_tail = 0.05, 0.22, 0.04
-
     elif mode_type == 3:
-        # ④ まぐろ: どっしり胸から腹が張る弾丸ボディ
         max_h_top, max_h_bot, max_w = spine_length * 0.15, spine_length * 0.14, spine_length * 0.20
         t_pk_top, t_pk_bot, t_w = 0.33, 0.35, 0.78
         ht_mouth, ht_waist, ht_tail = 0.10, 0.18, 0.52
         hb_mouth, hb_waist, hb_tail = 0.08, 0.18, 0.50
         w_mouth, w_waist, w_tail = 0.08, 0.18, 0.04
-
     elif mode_type == 4:
-        # ⑤ かつお: シャープで引き締まった弾丸ボディ
         max_h_top, max_h_bot, max_w = spine_length * 0.14, spine_length * 0.12, spine_length * 0.15
         t_pk_top, t_pk_bot, t_w = 0.33, 0.35, 0.78
         ht_mouth, ht_waist, ht_tail = 0.08, 0.18, 0.50
         hb_mouth, hb_waist, hb_tail = 0.06, 0.18, 0.48
         w_mouth, w_waist, w_tail = 0.06, 0.18, 0.04
-
     elif mode_type == 5:
-        # ⑥ さけ: 背中なだらか、お腹優しく張り出し
         max_h_top, max_h_bot, max_w = spine_length * 0.13, spine_length * 0.11, spine_length * 0.12
         t_pk_top, t_pk_bot, t_w = 0.40, 0.36, 0.76
         ht_mouth, ht_waist, ht_tail = 0.08, 0.22, 0.48
         hb_mouth, hb_waist, hb_tail = 0.06, 0.20, 0.45
         w_mouth, w_waist, w_tail = 0.05, 0.22, 0.04
-
     elif mode_type == 6:
-        # ⑦ さんま: 薄く細長い
         max_h_top, max_h_bot, max_w = spine_length * 0.06, spine_length * 0.06, spine_length * 0.08
         t_pk_top, t_pk_bot, t_w = 0.42, 0.42, 0.80
         ht_mouth, ht_waist, ht_tail = 0.10, 0.35, 0.50
         hb_mouth, hb_waist, hb_tail = 0.08, 0.35, 0.48
         w_mouth, w_waist, w_tail = 0.08, 0.35, 0.05
-
     else:
-        # ⑧ たら: 「タラ腹」！腹側(Bottom:0.18L)が超前寄りで下にドカンと垂れ下がる
         max_h_top, max_h_bot, max_w = spine_length * 0.10, spine_length * 0.18, spine_length * 0.14
         t_pk_top, t_pk_bot, t_w = 0.32, 0.26, 0.74
         ht_mouth, ht_waist, ht_tail = 0.08, 0.20, 0.45
         hb_mouth, hb_waist, hb_tail = 0.10, 0.18, 0.42
         w_mouth, w_waist, w_tail = 0.08, 0.20, 0.04
 
-    # --- 背側(Ry_top) の単調変化計算 ---
-    if t <= t_pk_top:
-        fy_top = smooth_step_val(t, 0.0, t_pk_top, ht_mouth, 1.0)
-    elif t <= t_w:
-        fy_top = smooth_step_val(t, t_pk_top, t_w, 1.0, ht_waist)
-    else:
-        fy_top = smooth_step_val(t, t_w, 1.0, ht_waist, ht_tail)
+    if t <= t_pk_top: fy_top = smooth_step_val(t, 0.0, t_pk_top, ht_mouth, 1.0)
+    elif t <= t_w: fy_top = smooth_step_val(t, t_pk_top, t_w, 1.0, ht_waist)
+    else: fy_top = smooth_step_val(t, t_w, 1.0, ht_waist, ht_tail)
 
-    # --- 腹側(Ry_bottom) の単調変化計算 ---
-    if t <= t_pk_bot:
-        fy_bot = smooth_step_val(t, 0.0, t_pk_bot, hb_mouth, 1.0)
-    elif t <= t_w:
-        fy_bot = smooth_step_val(t, t_pk_bot, t_w, 1.0, hb_waist)
-    else:
-        fy_bot = smooth_step_val(t, t_w, 1.0, hb_waist, hb_tail)
+    if t <= t_pk_bot: fy_bot = smooth_step_val(t, 0.0, t_pk_bot, hb_mouth, 1.0)
+    elif t <= t_w: fy_bot = smooth_step_val(t, t_pk_bot, t_w, 1.0, hb_waist)
+    else: fy_bot = smooth_step_val(t, t_w, 1.0, hb_waist, hb_tail)
 
-    # --- 厚み(Rz) の単調変化計算 ---
-    if t <= t_pk_top:
-        fz = smooth_step_val(t, 0.0, t_pk_top, w_mouth, 1.0)
-    elif t <= t_w:
-        fz = smooth_step_val(t, t_pk_top, t_w, 1.0, w_waist)
-    else:
-        fz = smooth_step_val(t, t_w, 1.0, w_waist, w_tail)
+    if t <= t_pk_top: fz = smooth_step_val(t, 0.0, t_pk_top, w_mouth, 1.0)
+    elif t <= t_w: fz = smooth_step_val(t, t_pk_top, t_w, 1.0, w_waist)
+    else: fz = smooth_step_val(t, t_w, 1.0, w_waist, w_tail)
 
     ry_top = max(r_min + (max_h_top - r_min) * fy_top, r_min)
     ry_bot = max(r_min + (max_h_bot - r_min) * fy_bot, r_min)
@@ -171,40 +121,26 @@ def get_profile_radii(t, mode_type, spine_length, user_bulge):
 
     return ry_top, ry_bot, rz
 
-
 def create_asymmetric_section_wire(ry_top, ry_bot, rz):
-    """
-    【G1滑らかな上下非対称魚体断面ワイヤー】
-    X軸＝左右厚み(rz), Y軸＝上下体高(Y>0:背側 ry_top, Y<0:腹側 ry_bot)
-    """
-    # 上半円 (0 -> 180 deg) : 背中(Y > 0)
     e_top = Part.makeCircle(1.0, FreeCAD.Vector(0,0,0), FreeCAD.Vector(0,0,1), 0, 180)
     mat_top = FreeCAD.Matrix()
-    mat_top.scale(rz, ry_top, 1.0)  # X:厚み, Y:背高
+    mat_top.scale(rz, ry_top, 1.0)
     e_top_scaled = e_top.transformGeometry(mat_top)
 
-    # 下半円 (180 -> 360 deg) : お腹(Y < 0)
     e_bottom = Part.makeCircle(1.0, FreeCAD.Vector(0,0,0), FreeCAD.Vector(0,0,1), 180, 360)
     mat_bottom = FreeCAD.Matrix()
-    mat_bottom.scale(rz, ry_bot, 1.0)  # X:厚み, Y:腹高
+    mat_bottom.scale(rz, ry_bot, 1.0)
     e_bottom_scaled = e_bottom.transformGeometry(mat_bottom)
 
     return Part.Wire([e_top_scaled, e_bottom_scaled])
 
-
 def build_fish_from_spine(spine_wire, num_sections, mode_type, user_bulge):
-    """
-    【水平泳ぎうねり拘束 ＆ ペアロフト結合】
-    背骨のS字ラインを「魚の水平方向の泳ぎうねり」として解釈し、
-    体高(Y軸:背中とお腹)を常に直立Z軸へ配置。厚み(X軸)を水平左右vec_sideへ正しくマッピング。
-    """
     spine_length = spine_wire.Length
     t_list = get_non_uniform_t_list(num_sections, mode_type)
     
     sample_pts = spine_wire.discretize(Number=1000)
     n_samples = len(sample_pts)
-    if n_samples < 2:
-        return None
+    if n_samples < 2: return None
 
     wires = []
 
@@ -213,48 +149,29 @@ def build_fish_from_spine(spine_wire, num_sections, mode_type, user_bulge):
         idx = max(0, min(n_samples - 1, idx))
         pt = sample_pts[idx]
 
-        # 背骨の進行方向（接線ベクトル）の算出
-        if idx == 0:
-            tangent = sample_pts[1] - sample_pts[0]
-        elif idx == n_samples - 1:
-            tangent = sample_pts[n_samples - 1] - sample_pts[n_samples - 2]
-        else:
-            tangent = sample_pts[idx + 1] - sample_pts[idx - 1]
+        if idx == 0: tangent = sample_pts[1] - sample_pts[0]
+        elif idx == n_samples - 1: tangent = sample_pts[n_samples - 1] - sample_pts[n_samples - 2]
+        else: tangent = sample_pts[idx + 1] - sample_pts[idx - 1]
 
-        if tangent.Length < 1e-6:
-            continue
+        if tangent.Length < 1e-6: continue
         vec_z = tangent.normalize()
 
-        # -------------------------------------------------------------
-        # ★ 水平泳ぎ拘束（正しい軸マッピング）：
-        # vec_up   = 真上(Z軸: 0,0,1) -> 断面ワイヤーのY軸（体高・背腹）に適用
-        # vec_side = 水平左右方向      -> 断面ワイヤーのX軸（厚み）に適用
-        # -------------------------------------------------------------
         vec_up = FreeCAD.Vector(0, 0, 1)
         vec_side = vec_z.cross(vec_up)
         
-        if vec_side.Length < 1e-6:
-            vec_side = FreeCAD.Vector(1, 0, 0)
-        else:
-            vec_side.normalize()
+        if vec_side.Length < 1e-6: vec_side = FreeCAD.Vector(1, 0, 0)
+        else: vec_side.normalize()
             
         vec_up = vec_side.cross(vec_z).normalize()
 
         ry_top, ry_bot, rz = get_profile_radii(t, mode_type, spine_length, user_bulge)
 
-        # 非対称断面ワイヤーの生成
         if mode_type == 0:
             base_circle = Part.makeCircle(ry_top, FreeCAD.Vector(0,0,0), FreeCAD.Vector(0,0,1))
             sec_wire = Part.Wire([base_circle])
         else:
             sec_wire = create_asymmetric_section_wire(ry_top, ry_bot, rz)
 
-        # -------------------------------------------------------------
-        # 行列適用（修正点）:
-        # 第1列(ワイヤーX:厚み)   <- vec_side (左右)
-        # 第2列(ワイヤーY:体高)   <- vec_up   (上下・直立)
-        # 第3列(ワイヤーZ:進行)   <- vec_z    (背骨接線)
-        # -------------------------------------------------------------
         mat = FreeCAD.Matrix(
             vec_side.x,  vec_up.x,  vec_z.x,  pt.x,
             vec_side.y,  vec_up.y,  vec_z.y,  pt.y,
@@ -265,38 +182,27 @@ def build_fish_from_spine(spine_wire, num_sections, mode_type, user_bulge):
         try:
             w_transformed = sec_wire.transformGeometry(mat)
             wires.append(w_transformed)
-        except Exception:
-            pass
+        except Exception: pass
 
-    if len(wires) < 2:
-        return None
+    if len(wires) < 2: return None
 
-    # --- 断面(i)と断面(i+1)をペアで連続ロフト ---
     segment_solids = []
     for i in range(len(wires) - 1):
         try:
             seg = Part.makeLoft([wires[i], wires[i+1]], True)
-            if seg and seg.isValid():
-                segment_solids.append(seg)
-        except Exception:
-            pass
+            if seg and seg.isValid(): segment_solids.append(seg)
+        except Exception: pass
 
-    if not segment_solids:
-        return None
+    if not segment_solids: return None
 
-    # --- 全セグメントを結合 ---
     compound_shape = segment_solids[0]
     for seg in segment_solids[1:]:
-        try:
-            compound_shape = compound_shape.fuse(seg)
-        except Exception:
-            pass
+        try: compound_shape = compound_shape.fuse(seg)
+        except Exception: pass
 
     return compound_shape
 
-
 class FishDialog(QtWidgets.QDialog):
-    """ 形状コントロールダイアログ """
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("背骨ライン → 3Dモデル生成")
@@ -305,7 +211,6 @@ class FishDialog(QtWidgets.QDialog):
         layout = QtWidgets.QVBoxLayout(self)
         form = QtWidgets.QFormLayout()
 
-        # 魚種・モデルの選択（①?⑧）
         self.combo_type = QtWidgets.QComboBox()
         self.combo_type.addItems([
             "① 単純ロフト (丸チューブ)",
@@ -319,12 +224,10 @@ class FishDialog(QtWidgets.QDialog):
         ])
         self.combo_type.currentIndexChanged.connect(self.update_ui_state)
 
-        # 分割数（デフォルト 80）
         self.spin_steps = QtWidgets.QSpinBox()
         self.spin_steps.setRange(10, 500)
         self.spin_steps.setValue(80)
 
-        # ①専用：最大ふくらみ (mm)
         self.spin_bulge = QtWidgets.QDoubleSpinBox()
         self.spin_bulge.setRange(0.1, 500.0)
         self.spin_bulge.setValue(20.0)
@@ -358,7 +261,6 @@ class FishDialog(QtWidgets.QDialog):
             'steps': self.spin_steps.value(),
             'bulge': self.spin_bulge.value()
         }
-
 
 class Tool_MakeFish:
     def GetResources(self):
@@ -418,7 +320,7 @@ class Tool_MakeFish:
                 if hasattr(fish_obj, 'ViewObject') and fish_obj.ViewObject:
                     fish_obj.ViewObject.ShapeColor = (0.2, 0.7, 0.9)
                     if hasattr(fish_obj.ViewObject, "Shininess"):
-                        fish_obj.ViewObject.Shininess = 0.9[cite: 2]
+                        fish_obj.ViewObject.Shininess = 0.9
 
                 doc.commitTransaction()
                 doc.recompute()
@@ -433,6 +335,5 @@ class Tool_MakeFish:
             QtWidgets.QMessageBox.critical(None, "エラー", f"処理中にエラーが発生しました:\n{str(e)}")
         finally:
             pm.close()
-
 
 FreeCADGui.addCommand('Ring_MakeFish', Tool_MakeFish())

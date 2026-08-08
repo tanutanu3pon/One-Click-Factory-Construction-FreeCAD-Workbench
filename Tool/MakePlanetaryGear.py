@@ -1,16 +1,12 @@
 # -*- coding: utf-8 -*-
-# Tool/MakePlanetaryGear.py
 import os
 import math
 import FreeCAD
 import FreeCADGui
 import Part
-
 from Core.QtCompat import QtWidgets, QtGui, QtCore
 
-
 def create_gear_solid(m, z, height, internal=False, backlash=0.15, tip_relief=0.05, hole_radius=0.0):
-    """ 圧力角20度・バックラッシ・歯先カットを考慮しピッチ円で屈折させるインボリュート近似ソリッドを生成 """
     r = (m * z) / 2.0
     tan_alpha = math.tan(math.radians(20))
 
@@ -61,9 +57,7 @@ def create_gear_solid(m, z, height, internal=False, backlash=0.15, tip_relief=0.
 
     return solid
 
-
 class PlanetaryGearAnimator(QtWidgets.QDialog):
-    """ 不透明＆独立配置のアニメーション制御ウィンドウ """
     def __init__(self, doc_name, z_sun, z_planet, num_planets, m, parent=None):
         super().__init__(parent)
         self.doc_name = doc_name
@@ -76,14 +70,13 @@ class PlanetaryGearAnimator(QtWidgets.QDialog):
         
         self.current_angle = 0.0
         self.timer = QtCore.QTimer(self)
-        self.timer.setInterval(30) # 約30FPS
+        self.timer.setInterval(30)
         self.timer.timeout.connect(self.update_animation)
         
         self.setWindowTitle("遊星ギア アニメーション制御")
         self.setWindowFlags(QtCore.Qt.Window | QtCore.Qt.WindowStaysOnTopHint)
         self.resize(340, 260)
         
-        # 背景の不透明化とスタイリング（透けを完全にシャットアウト）
         self.setAutoFillBackground(True)
         self.setStyleSheet("""
             QDialog {
@@ -126,7 +119,6 @@ class PlanetaryGearAnimator(QtWidgets.QDialog):
         layout = QtWidgets.QVBoxLayout(self)
         layout.setSpacing(10)
 
-        # 作動モード
         layout.addWidget(QtWidgets.QLabel("<b>【作動モード】</b>"))
         self.combo_mode = QtWidgets.QComboBox()
         self.combo_mode.addItems([
@@ -136,7 +128,6 @@ class PlanetaryGearAnimator(QtWidgets.QDialog):
         ])
         layout.addWidget(self.combo_mode)
 
-        # 速度スライダー
         speed_layout = QtWidgets.QHBoxLayout()
         speed_layout.addWidget(QtWidgets.QLabel("回転速度:"))
         self.slider_speed = QtWidgets.QSlider(QtCore.Qt.Horizontal)
@@ -145,11 +136,9 @@ class PlanetaryGearAnimator(QtWidgets.QDialog):
         speed_layout.addWidget(self.slider_speed)
         layout.addLayout(speed_layout)
 
-        # 逆回転チェック
         self.chk_reverse = QtWidgets.QCheckBox("逆方向回転")
         layout.addWidget(self.chk_reverse)
 
-        # ボタン群（文字化けを防ぐためシンプルなテキスト）
         btn_layout = QtWidgets.QHBoxLayout()
         self.btn_play = QtWidgets.QPushButton("再生")
         self.btn_play.setCheckable(True)
@@ -163,7 +152,6 @@ class PlanetaryGearAnimator(QtWidgets.QDialog):
         layout.addLayout(btn_layout)
 
     def move_to_optimal_position(self):
-        """ 左側のツリービューを避け、メイン画面の右上へ自動配置 """
         if self.parent():
             parent_rect = self.parent().geometry()
             x = parent_rect.x() + parent_rect.width() - self.width() - 50
@@ -247,9 +235,7 @@ class PlanetaryGearAnimator(QtWidgets.QDialog):
         self.timer.stop()
         event.accept()
 
-
 class PlanetaryGearDialog(QtWidgets.QDialog):
-    """ 遊星ギア設定ダイアログ """
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("遊星ギアの作成 (位相・隙間 計算対応)")
@@ -258,7 +244,6 @@ class PlanetaryGearDialog(QtWidgets.QDialog):
 
     def init_ui(self):
         layout = QtWidgets.QVBoxLayout(self)
-
         tab_widget = QtWidgets.QTabWidget()
 
         tab1 = QtWidgets.QWidget()
@@ -489,10 +474,7 @@ class PlanetaryGearDialog(QtWidgets.QDialog):
             'base_thick': self.spin_base_thick.value()
         }
 
-
-# コントローラーウィンドウ参照保持
 _animator_window = None
-
 
 class Tool_MakePlanetaryGear:
     def GetResources(self):
@@ -532,7 +514,6 @@ class Tool_MakePlanetaryGear:
         center_distance = m * (z_sun + z_planet) / 2.0
         d_planet = m * z_planet
 
-        # --- 1. 太陽歯車生成 ---
         sun_shape = create_gear_solid(m, z_sun, height, internal=False, backlash=bl, tip_relief=tr)
         if sun_shaft_len > 0:
             sun_shaft = Part.makeCylinder(sun_shaft_dia / 2.0, sun_shaft_len, FreeCAD.Vector(0, 0, -sun_shaft_len))
@@ -544,7 +525,6 @@ class Tool_MakePlanetaryGear:
 
         planet_align_offset = 180.0 - (z_planet // 2) * (360.0 / z_planet) - (180.0 / z_planet)
 
-        # --- 遊星キャリア準備 ---
         planet_pin_dia = min(d_planet * 0.3, carrier_shaft_dia * 0.9)
         carrier_parts = []
         c_base_z = height + planet_pin_extend
@@ -558,7 +538,6 @@ class Tool_MakePlanetaryGear:
                 c_shaft = Part.makeCylinder(carrier_shaft_dia / 2.0, carrier_shaft_len, FreeCAD.Vector(0, 0, c_shaft_z))
                 carrier_parts.append(c_shaft)
 
-        # --- 2. 遊星歯車生成 ---
         for i in range(n):
             phi = i * 360.0 / n
             x = center_distance * math.cos(math.radians(phi))
@@ -590,7 +569,6 @@ class Tool_MakePlanetaryGear:
             carrier_obj.Shape = carrier_solid
             carrier_obj.ViewObject.ShapeColor = (0.8, 0.8, 0.4)
 
-        # --- 3. 内歯車生成 ---
         ring_shape = create_gear_solid(m, z_ring, height, internal=True, backlash=bl, tip_relief=tr)
         ring_obj = doc.addObject("Part::Feature", "RingGear")
         ring_obj.Shape = ring_shape
@@ -599,7 +577,6 @@ class Tool_MakePlanetaryGear:
         ring_obj.Placement.Rotation = FreeCAD.Rotation(FreeCAD.Vector(0,0,1), ring_rot)
         ring_obj.ViewObject.ShapeColor = (0.4, 0.6, 0.8)
 
-        # --- 4. 固定ベース生成 ---
         if base_thick > 0:
             rf_ring = (m * z_ring) / 2.0 + 1.25 * m
             r_outer = rf_ring + 4.0 * m
@@ -617,11 +594,9 @@ class Tool_MakePlanetaryGear:
         doc.recompute()
         FreeCADGui.SendMsgToActiveView("ViewFit")
 
-        # --- 5. アニメーション制御ウィンドウ起動 ---
         _animator_window = PlanetaryGearAnimator(
             doc.Name, z_sun, z_planet, n, m, parent=FreeCADGui.getMainWindow()
         )
         _animator_window.show()
-
 
 FreeCADGui.addCommand('Ring_MakePlanetaryGear', Tool_MakePlanetaryGear())

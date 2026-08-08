@@ -3,15 +3,9 @@ import os
 import FreeCAD
 import FreeCADGui
 import Part
-
-# Qtの互換性確保（PySide2 / PySide6 両対応）
 from Core.QtCompat import QtWidgets, QtGui, QtCore
-
 import Core.Progress as Progress
 
-# ==========================================
-# ?? 体積・サイズ確認＆余白（マージン）入力窓
-# ==========================================
 class JigOptionDialog(QtWidgets.QDialog):
     def __init__(self, target_name, size_mm, volume_mm3, parent=None):
         super(JigOptionDialog, self).__init__(parent)
@@ -29,7 +23,6 @@ class JigOptionDialog(QtWidgets.QDialog):
         lbl_size = QtWidgets.QLabel(info_text)
         lbl_volume = QtWidgets.QLabel(f"<font color='#2e7d32' size='4'><b>ジャスト体積: {volume_mm3:,.2f} mm3</b></font>")
         
-        # 段ボールに必要な「余白」を入れる欄
         self.spin_margin = QtWidgets.QDoubleSpinBox()
         self.spin_margin.setRange(0.0, 100.0)
         self.spin_margin.setValue(0.0)
@@ -56,10 +49,6 @@ class JigOptionDialog(QtWidgets.QDialog):
     def get_values(self):
         return self.spin_margin.value()
 
-
-# ==========================================
-# ?? ツール本体（外包体積計算＆包囲ブロック生成）
-# ==========================================
 class Tool_MakeJig:
     def GetResources(self):
         icon_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "icons", "jig.png").replace('\\', '/')
@@ -75,7 +64,6 @@ class Tool_MakeJig:
             QtWidgets.QMessageBox.warning(None, "エラー", "開いているドキュメントがありません。")
             return
 
-        # 1. 操作者がモデルをクリック（選択）したのを取得
         selection = FreeCADGui.Selection.getSelection()
         if not selection:
             QtWidgets.QMessageBox.warning(None, "エラー", "モデルが選択されていません。画面上またはツリーから対象オブジェクトを選択してください。")
@@ -86,59 +74,47 @@ class Tool_MakeJig:
             QtWidgets.QMessageBox.warning(None, "エラー", "有効な形状を持たないオブジェクトです。")
             return
 
-        # 2. モデル全体のバウンディングボックス（境界箱）を取得
         bbox = target_obj.Shape.BoundBox
         size_x = bbox.XMax - bbox.XMin
         size_y = bbox.YMax - bbox.YMin
         size_z = bbox.ZMax - bbox.ZMin
         
-        # 3. 体積の計算 (mm3 単位)
         volume_mm3 = size_x * size_y * size_z
 
-        # 4. ダイアログを表示して計算結果を確認・余白を入力
         d = JigOptionDialog(target_obj.Label, (size_x, size_y, size_z), volume_mm3)
         if d.exec_() != QtWidgets.QDialog.Accepted: 
             return
             
         margin = d.get_values()
         
-        # 5. 段ボール箱（包囲ブロック）の生成処理へ
-        bar = Progress.ProgressManager()
-        bar.start(title="段ボールサイズ箱生成", initial_text="位置とサイズを計算中...")
-        
-        # 元のサイズにマージン（両側分として2倍）を加算
-        jig_w = size_x + (margin * 2.0)
-        jig_l = size_y + (margin * 2.0)
-        jig_h = size_z + (margin * 2.0)
-        
-        bar.update(50, "3D空間に外包ブロックを作成中...")
-        
-        # 包むための直方体を生成
-        enclosing_box = Part.makeBox(jig_w, jig_l, jig_h)
-        
-        # 配置位置の計算（マージン分だけ最小座標から外側にずらす）
-        pos_x = bbox.XMin - margin
-        pos_y = bbox.YMin - margin
-        pos_z = bbox.ZMin - margin
-        enclosing_box.translate(FreeCAD.Vector(pos_x, pos_y, pos_z))
-        
-        bar.update(80, "表示プロパティを調整中...")
-        
-        # FreeCADへ出力
-        obj_jig = doc.addObject("Part::Feature", f"CardboardBox_for_{target_obj.Name}")
-        obj_jig.Shape = enclosing_box
-        
-        # 見栄えの調整：透明度75%の薄い水色に設定
-        obj_jig.ViewObject.ShapeColor = (0.6, 0.8, 1.0)
-        obj_jig.ViewObject.Transparency = 75 
-        
-        bar.update(100, "完了")
-        bar.close()
-        
-        doc.recompute()
-        FreeCADGui.activeView().fitAll()
+        with Progress.ProgressManager() as bar:
+            bar.start(title="段ボールサイズ箱生成", initial_text="位置とサイズを計算中...")
+            
+            jig_w = size_x + (margin * 2.0)
+            jig_l = size_y + (margin * 2.0)
+            jig_h = size_z + (margin * 2.0)
+            
+            bar.update(50, "3D空間に外包ブロックを作成中...")
+            
+            enclosing_box = Part.makeBox(jig_w, jig_l, jig_h)
+            
+            pos_x = bbox.XMin - margin
+            pos_y = bbox.YMin - margin
+            pos_z = bbox.ZMin - margin
+            enclosing_box.translate(FreeCAD.Vector(pos_x, pos_y, pos_z))
+            
+            bar.update(80, "表示プロパティを調整中...")
+            
+            obj_jig = doc.addObject("Part::Feature", f"CardboardBox_for_{target_obj.Name}")
+            obj_jig.Shape = enclosing_box
+            
+            obj_jig.ViewObject.ShapeColor = (0.6, 0.8, 1.0)
+            obj_jig.ViewObject.Transparency = 75 
+            
+            bar.update(100, "完了")
+            doc.recompute()
+            FreeCADGui.activeView().fitAll()
 
-        # 最終確定した段ボール内寸のレポート表示
         final_volume = jig_w * jig_l * jig_h
         QtWidgets.QMessageBox.information(
             None,
@@ -150,5 +126,4 @@ class Tool_MakeJig:
             f"確定総体積: {final_volume:,.1f} mm3"
         )
 
-# コマンドの登録（ツールバーアイコン用）
 FreeCADGui.addCommand('Ring_MakeJig', Tool_MakeJig())

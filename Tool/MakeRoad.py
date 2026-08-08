@@ -1,12 +1,9 @@
 # -*- coding: utf-8 -*-
-# Tool/MakeRoad.py
 import os
 import FreeCAD
 import FreeCADGui
 import Part
-
 from Core.QtCompat import QtWidgets, QtGui, QtCore
-
 import Core.Progress as Progress
 
 class RoadDialog(QtWidgets.QDialog):
@@ -21,38 +18,38 @@ class RoadDialog(QtWidgets.QDialog):
         layout.addRow(QtWidgets.QLabel("<h3>【道路の幅と層構造】</h3>"))
         self.spin_width = QtWidgets.QSpinBox()
         self.spin_width.setRange(500, MAX_MM)
-        self.spin_width.setValue(6000) # デフォルト6000mm
+        self.spin_width.setValue(6000)
         self.spin_width.setSuffix(" mm")
         layout.addRow("道路幅:", self.spin_width)
         
         self.spin_pave = QtWidgets.QSpinBox()
         self.spin_pave.setRange(0, MAX_MM)
-        self.spin_pave.setValue(100) # 舗装厚デフォルト100mm
+        self.spin_pave.setValue(100)
         self.spin_pave.setSuffix(" mm")
         layout.addRow("舗装厚（表層・基層）:", self.spin_pave)
 
         self.spin_upper = QtWidgets.QSpinBox()
         self.spin_upper.setRange(0, MAX_MM)
-        self.spin_upper.setValue(150) # 上層路盤デフォルト150mm
+        self.spin_upper.setValue(150)
         self.spin_upper.setSuffix(" mm")
         layout.addRow("上層路盤厚:", self.spin_upper)
 
         self.spin_lower = QtWidgets.QSpinBox()
         self.spin_lower.setRange(0, MAX_MM)
-        self.spin_lower.setValue(300) # 下層路盤デフォルト300mm
+        self.spin_lower.setValue(300)
         self.spin_lower.setSuffix(" mm")
         layout.addRow("下層路盤厚:", self.spin_lower)
 
         layout.addRow(QtWidgets.QLabel("<hr><h3>【配置・アライメントの設定】</h3>"))
         self.spin_length = QtWidgets.QSpinBox()
         self.spin_length.setRange(100, MAX_MM * 10)
-        self.spin_length.setValue(100000) # デフォルト100m (100,000mm)
+        self.spin_length.setValue(100000)
         self.spin_length.setSuffix(" mm")
         layout.addRow("道路の延長（長さ L）:", self.spin_length)
 
         self.spin_z_offset = QtWidgets.QSpinBox()
         self.spin_z_offset.setRange(-MAX_MM, MAX_MM)
-        self.spin_z_offset.setValue(0) # デフォルト0mm
+        self.spin_z_offset.setValue(0)
         self.spin_z_offset.setSuffix(" mm (坂道の高低差)")
         layout.addRow("縦断高低差 (Z軸):", self.spin_z_offset)
 
@@ -110,13 +107,12 @@ class Tool_MakeRoad:
             current_start_z = 0.0   
             max_idx = 0            
 
-            # 既存のRoadオブジェクト（グループ）をスキャンして数珠つなぎ座標を取得
             for obj in doc.Objects:
                 if obj.Name.startswith("Infra_Road_"):
                     try:
                         idx = int(obj.Name.split("_")[-1])
                         if idx > max_idx: max_idx = idx
-                    except: pass
+                    except Exception: pass
                     if hasattr(obj, "EndOffsetY"):
                         if obj.EndOffsetY > max_end_y:
                             max_end_y = obj.EndOffsetY
@@ -127,25 +123,22 @@ class Tool_MakeRoad:
             Y_start = max_end_y
             Y_end = max_end_y + vals["length"]
 
-            # アライメント計算（X軸の配置）
             w = vals["width"]
-            if vals["align_mode"] == 0: # センター基準
+            if vals["align_mode"] == 0:
                 sx1, sx2 = current_start_x - w/2, current_start_x + w/2
                 cx_start = current_start_x
-            elif vals["align_mode"] == 1: # 左エッジ基準
+            elif vals["align_mode"] == 1:
                 sx1, sx2 = current_start_x, current_start_x + w
                 cx_start = current_start_x + w/2
-            else: # 右エッジ基準
+            else:
                 sx1, sx2 = current_start_x - w, current_start_x
                 cx_start = current_start_x - w/2
 
-            # 今回は幅が一定のため、手前も奥もX座標は同じ
             ex1, ex2 = sx1, sx2
             cx_end = cx_start
             next_end_x = current_start_x
             next_end_z = current_start_z + vals["z_offset"]
 
-            # 各層のZ座標（深さ）を計算
             Z0 = current_start_z
             Z1 = Z0 - vals["pave"]
             Z2 = Z1 - vals["upper"]
@@ -156,7 +149,6 @@ class Tool_MakeRoad:
             E2 = E1 - vals["upper"]
             E3 = E2 - vals["lower"]
 
-            # 親となるグループ（フォルダ）を作成し、BIMプロパティを付与
             group_name = f"Infra_Road_{next_idx}"
             group = doc.addObject("App::DocumentObjectGroup", group_name)
             group.addProperty("App::PropertyFloat", "EndOffsetX", "Construction")
@@ -166,10 +158,8 @@ class Tool_MakeRoad:
             group.EndOffsetY = Y_end
             group.EndOffsetZ = next_end_z
 
-            # ソリッド（立体）を作る共通関数
             def make_layer_solid(sz_top, sz_bot, ez_top, ez_bot, is_line=False):
                 if is_line:
-                    # センターラインの幅(150mm)
                     lx1, lx2 = cx_start - 75, cx_start + 75
                 else:
                     lx1, lx2 = sx1, sx2
@@ -192,7 +182,7 @@ class Tool_MakeRoad:
             if vals["pave"] > 0:
                 obj = doc.addObject("Part::Feature", f"{group_name}_Pavement")
                 obj.Shape = make_layer_solid(Z0, Z1, E0, E1)
-                obj.ViewObject.ShapeColor = (0.2, 0.2, 0.2) # ダークグレー
+                obj.ViewObject.ShapeColor = (0.2, 0.2, 0.2)
                 obj.ViewObject.DisplayMode = "Shaded"
                 group.addObject(obj)
 
@@ -200,7 +190,7 @@ class Tool_MakeRoad:
             if vals["upper"] > 0:
                 obj = doc.addObject("Part::Feature", f"{group_name}_UpperBase")
                 obj.Shape = make_layer_solid(Z1, Z2, E1, E2)
-                obj.ViewObject.ShapeColor = (0.55, 0.55, 0.55) # グレー
+                obj.ViewObject.ShapeColor = (0.55, 0.55, 0.55)
                 obj.ViewObject.DisplayMode = "Shaded"
                 group.addObject(obj)
 
@@ -208,24 +198,21 @@ class Tool_MakeRoad:
             if vals["lower"] > 0:
                 obj = doc.addObject("Part::Feature", f"{group_name}_LowerBase")
                 obj.Shape = make_layer_solid(Z2, Z3, E2, E3)
-                obj.ViewObject.ShapeColor = (0.45, 0.35, 0.25) # 茶色系
+                obj.ViewObject.ShapeColor = (0.45, 0.35, 0.25)
                 obj.ViewObject.DisplayMode = "Shaded"
                 group.addObject(obj)
 
             bar.update(85, "センターラインをペイント中...")
-            # 道路の上に厚さ5mmの白いラインを生成
             obj_line = doc.addObject("Part::Feature", f"{group_name}_CenterLine")
             obj_line.Shape = make_layer_solid(Z0 + 5, Z0, E0 + 5, E0, is_line=True)
-            obj_line.ViewObject.ShapeColor = (1.0, 1.0, 1.0) # ピュアホワイト
+            obj_line.ViewObject.ShapeColor = (1.0, 1.0, 1.0)
             obj_line.ViewObject.DisplayMode = "Shaded"
             group.addObject(obj_line)
 
-            # ガイド類のクリーニング
             for old_name in ["GL_Ground_Plane", "Axis_X_Red", "Axis_Y_Green", "Axis_Z_Blue"]:
                 old_obj = doc.getObject(old_name)
                 if old_obj: doc.removeObject(old_obj.Name)
 
-            # GL環境の再構築
             bar.update(90, "GL環境を再スケーリング中...")
             max_dim = max(w, Y_end, abs(next_end_z))
             guide_size = max_dim * 1.2
@@ -233,7 +220,6 @@ class Tool_MakeRoad:
             ground_shape = Part.makeBox(guide_size * 2, guide_size * 2, 1)
             ground_obj = doc.addObject("Part::Feature", "GL_Ground_Plane")
             ground_obj.Shape = ground_shape
-            # 地面を一番深い層の下に配置
             ground_obj.Placement = FreeCAD.Placement(FreeCAD.Vector(-guide_size * 0.5, -guide_size * 0.1, Z3 - 1000), FreeCAD.Rotation())
             ground_obj.ViewObject.ShapeColor = (0.45, 0.42, 0.38)
             ground_obj.ViewObject.Transparency = 70

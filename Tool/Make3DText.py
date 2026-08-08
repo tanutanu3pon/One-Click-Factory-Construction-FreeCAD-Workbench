@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-# Tool/Make3DText.py
 import os
 import sys
 import math
@@ -12,62 +11,35 @@ import Draft
 
 from Core.QtCompat import QtWidgets, QtGui, QtCore
 
-# 進捗マネージャーの読み込み
 try:
     from Core.Progress import ProgressManager
 except ImportError:
-    # 万が一 Core/Progress.py が見つからない場合のフォールバッククラス
     class ProgressManager:
-        def __init__(self):
-            self.pd = None
-        def start(self, title, initial_text):
-            pass
-        def update(self, percent, text=None):
-            pass
-        def close(self):
-            pass
+        def __init__(self): pass
+        def start(self, title, initial_text): pass
+        def update(self, percent, text=None): pass
+        def close(self): pass
 
-# 高速キャッシュ用
 _FONT_SCAN_CACHE = None
 
 def get_bundled_font_dir():
-    """ ワークベンチ内の fonts フォルダの絶対パスを取得（無ければ自動作成） """
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     font_dir = os.path.join(base_dir, "fonts").replace('\\', '/')
-    
     if not os.path.exists(font_dir):
-        try:
-            os.makedirs(font_dir, exist_ok=True)
-        except Exception:
-            pass
+        try: os.makedirs(font_dir, exist_ok=True)
+        except Exception: pass
     return font_dir
 
-
 def parse_font_info_fast(file_name):
-    """ ファイル名から「ファミリー名」と「スタイル/太さ」を超高速テキスト解析 """
     raw_name = os.path.splitext(file_name)[0]
-    
     style_keywords = [
-        ("bolditalic", "Bold Italic"),
-        ("bold_italic", "Bold Italic"),
-        ("boldoblique", "Bold Italic"),
-        ("extrabold", "Extra Bold"),
-        ("semibold", "Semi Bold"),
-        ("extralight", "Extra Light"),
-        ("bold", "Bold"),
-        ("italic", "Italic"),
-        ("oblique", "Italic"),
-        ("medium", "Medium"),
-        ("light", "Light"),
-        ("thin", "Thin"),
-        ("black", "Black"),
-        ("heavy", "Heavy"),
-        ("regular", "Regular")
+        ("bolditalic", "Bold Italic"), ("bold_italic", "Bold Italic"), ("boldoblique", "Bold Italic"),
+        ("extrabold", "Extra Bold"), ("semibold", "Semi Bold"), ("extralight", "Extra Light"),
+        ("bold", "Bold"), ("italic", "Italic"), ("oblique", "Italic"), ("medium", "Medium"),
+        ("light", "Light"), ("thin", "Thin"), ("black", "Black"), ("heavy", "Heavy"), ("regular", "Regular")
     ]
-    
     parts = raw_name.replace('_', ' ').split('-')
     family_name = parts[0].strip()
-    
     style_name = "Regular"
     if len(parts) > 1:
         possible_style = parts[1].lower().strip()
@@ -83,27 +55,22 @@ def parse_font_info_fast(file_name):
                 break
 
     family_name = family_name.replace("VariableFont wght", "").replace("VariableFont", "").strip()
-    if not family_name:
-        family_name = raw_name
-
+    if not family_name: family_name = raw_name
     return family_name, style_name
 
-
 def scan_and_auto_classify_fonts(force_refresh=False):
-    """ fonts フォルダ内を超高速スキャンして6カテゴリにスマート分類 """
     global _FONT_SCAN_CACHE
     if _FONT_SCAN_CACHE is not None and not force_refresh:
         return _FONT_SCAN_CACHE
 
     font_dir = get_bundled_font_dir()
-    
     categorized = {
-        "日本語 (Japanese)": {},
-        "英語・汎用 (English/Latin)": {},
-        "奇抜・デザイン (Novelty/Fancy)": {},
-        "特殊文字 (Symbols/Special)": {},
-        "その他 (Other)": {},
-        "すべて (All)": {}
+        0: {}, # 日本語
+        1: {}, # 英語・汎用
+        2: {}, # 奇抜・デザイン
+        3: {}, # 特殊文字
+        4: {}, # その他
+        5: {}  # すべて
     }
     
     if os.path.exists(font_dir):
@@ -112,194 +79,115 @@ def scan_and_auto_classify_fonts(force_refresh=False):
                 if file.lower().endswith(('.ttf', '.otf')):
                     file_path = os.path.join(root, file).replace('\\', '/')
                     family_name, style_name = parse_font_info_fast(file)
-                    
                     text = (file_path + " " + family_name + " " + file).lower()
 
                     target_cats = []
 
-                    jp_keywords = [
-                        "jp", "japanese", "gothic", "mincho", "meiryo", "msgothic", "msmincho", 
-                        "yu", "hiragino", "noto sans jp", "noto serif jp", "mplus", "kosugi", "sawarabi",
-                        "shippori", "zen", "biz", "reggae", "potta", "dela", "rampart", "kaisei", 
-                        "yuji", "klee", "mochiy", "yusei", "train", "stick", "dotgothic", "kiwi",
-                        "hachi", "rocknroll", "chokurui", "aoyagi", "kouzan"
-                    ]
-
-                    novelty_keywords = [
-                        "blood", "drip", "horror", "creep", "zombie", "monster", "vampire", "halloween", "scary",
-                        "rubik", "3d", "iso", "stencil", "black ops", "blackops", "train", "rampart", "reggae",
-                        "potta", "rocknroll", "chokurui", "comic", "cartoon", "pop", "fancy", "novelty",
-                        "decorative", "circus", "pixel", "arcade", "retro", "graffiti", "gothic_one", "cherry"
-                    ]
-
-                    symbol_keywords = [
-                        "symbol", "braille", "emoji", "icon", "dingbat", "math", "music", "sign",
-                        "wingdings", "webdings", "font awesome", "nerd", "dots", "material"
-                    ]
-
-                    other_lang_keywords = [
-                        "chinese", "zh-", "zh_", "sc", "tc", "hans", "hant", "noto sans sc", "noto sans tc", "hk",
-                        "kr", "korean", "hangul", "noto sans kr",
-                        "arabic", "ar", "noto sans arabic", "noto kufi", "noto naskh",
-                        "russian", "cyrillic", "ru", "noto sans cyrillic",
-                        "thai", "hebrew", "devanagari", "bengali", "tamil"
-                    ]
+                    jp_keywords = ["jp", "japanese", "gothic", "mincho", "meiryo", "msgothic", "msmincho", "yu", "hiragino", "noto sans jp", "noto serif jp", "mplus", "kosugi", "sawarabi", "shippori", "zen", "biz", "reggae", "potta", "dela", "rampart", "kaisei", "yuji", "klee", "mochiy", "yusei", "train", "stick", "dotgothic", "kiwi", "hachi", "rocknroll", "chokurui", "aoyagi", "kouzan"]
+                    novelty_keywords = ["blood", "drip", "horror", "creep", "zombie", "monster", "vampire", "halloween", "scary", "rubik", "3d", "iso", "stencil", "black ops", "blackops", "train", "rampart", "reggae", "potta", "rocknroll", "chokurui", "comic", "cartoon", "pop", "fancy", "novelty", "decorative", "circus", "pixel", "arcade", "retro", "graffiti", "gothic_one", "cherry"]
+                    symbol_keywords = ["symbol", "braille", "emoji", "icon", "dingbat", "math", "music", "sign", "wingdings", "webdings", "font awesome", "nerd", "dots", "material"]
+                    other_lang_keywords = ["chinese", "zh-", "zh_", "sc", "tc", "hans", "hant", "noto sans sc", "noto sans tc", "hk", "kr", "korean", "hangul", "noto sans kr", "arabic", "ar", "noto sans arabic", "noto kufi", "noto naskh", "russian", "cyrillic", "ru", "noto sans cyrillic", "thai", "hebrew", "devanagari", "bengali", "tamil"]
 
                     is_jp = any(k in text for k in jp_keywords)
                     is_novelty = any(k in text for k in novelty_keywords)
                     is_symbol = any(k in text for k in symbol_keywords)
                     is_other_lang = any(k in text for k in other_lang_keywords)
 
-                    if is_jp:
-                        target_cats.append("日本語 (Japanese)")
+                    if is_jp: target_cats.append(0)
+                    if is_novelty: target_cats.append(2)
+                    if is_symbol: target_cats.append(3)
+                    elif is_other_lang: target_cats.append(4)
+                    elif not is_jp and not is_novelty: target_cats.append(1)
 
-                    if is_novelty:
-                        target_cats.append("奇抜・デザイン (Novelty/Fancy)")
+                    target_cats.append(5)
 
-                    if is_symbol:
-                        target_cats.append("特殊文字 (Symbols/Special)")
-                    elif is_other_lang:
-                        target_cats.append("その他 (Other)")
-                    elif not is_jp and not is_novelty:
-                        target_cats.append("英語・汎用 (English/Latin)")
-
-                    target_cats.append("すべて (All)")
-
-                    for cat in target_cats:
-                        if family_name not in categorized[cat]:
-                            categorized[cat][family_name] = {}
-                        
+                    for cat_idx in target_cats:
+                        if family_name not in categorized[cat_idx]:
+                            categorized[cat_idx][family_name] = {}
                         style_key = style_name
-                        if style_key in categorized[cat][family_name]:
+                        if style_key in categorized[cat_idx][family_name]:
                             style_key = f"{style_name} [{file}]"
-                            
-                        categorized[cat][family_name][style_key] = file_path
+                        categorized[cat_idx][family_name][style_key] = file_path
 
     _FONT_SCAN_CACHE = categorized
     return _FONT_SCAN_CACHE
 
-
 def create_solid_from_shape(shape, height):
-    """ 奇抜フォントの自己交差・不整合ワイヤーを多段階（4ステップ）で自動補正して立体化する強力エンジン """
-    if shape is None or shape.isNull():
-        return None
-
-    # Step 1: 標準押し出し
+    if shape is None or shape.isNull(): return None
     try:
         ext = shape.extrude(FreeCAD.Vector(0, 0, height))
         if ext and ext.isValid() and ext.ShapeType == "Solid" and ext.isClosed():
             return ext
-    except Exception:
-        pass
+    except Exception: pass
 
-    # Step 2: 2D微小オフセットによる自己交差線の自動融着・クリーン化
     try:
         cleaned_faces = []
         if hasattr(shape, 'Faces') and shape.Faces:
             for f in shape.Faces:
-                try:
-                    off_f = f.makeOffset2D(0.005, 0)
-                    cleaned_faces.append(off_f)
-                except Exception:
-                    cleaned_faces.append(f)
+                try: cleaned_faces.append(f.makeOffset2D(0.005, 0))
+                except Exception: cleaned_faces.append(f)
         elif hasattr(shape, 'Wires') and shape.Wires:
             for w in shape.Wires:
-                try:
-                    f = Part.Face(w)
-                    off_f = f.makeOffset2D(0.005, 0)
-                    cleaned_faces.append(off_f)
-                except Exception:
-                    pass
+                try: cleaned_faces.append(Part.Face(w).makeOffset2D(0.005, 0))
+                except Exception: pass
 
         if cleaned_faces:
             comp_2d = cleaned_faces[0]
             for cf in cleaned_faces[1:]:
-                try:
-                    comp_2d = comp_2d.fuse(cf)
-                except Exception:
-                    pass
+                try: comp_2d = comp_2d.fuse(cf)
+                except Exception: pass
             ext = comp_2d.extrude(FreeCAD.Vector(0, 0, height))
-            if ext and ext.isValid():
-                return ext
-    except Exception:
-        pass
+            if ext and ext.isValid(): return ext
+    except Exception: pass
 
-    # Step 3: Shell修復とSolid強制造型
     solids = []
-    faces = shape.Faces
-    if not faces and shape.Wires:
-        try:
-            faces = [Part.Face(shape.Wires)]
-        except Exception:
-            pass
+    faces = shape.Faces if hasattr(shape, 'Faces') and shape.Faces else []
+    if not faces and hasattr(shape, 'Wires') and shape.Wires:
+        try: faces = [Part.Face(shape.Wires)]
+        except Exception: pass
 
     for f in faces:
         try:
             ext = f.extrude(FreeCAD.Vector(0, 0, height))
             if ext.ShapeType != "Solid" or not ext.isClosed():
-                shell = Part.makeShell(ext.Faces)
-                solid = Part.makeSolid(shell)
-                solids.append(solid)
-            else:
-                solids.append(ext)
+                solids.append(Part.makeSolid(Part.makeShell(ext.Faces)))
+            else: solids.append(ext)
         except Exception:
-            try:
-                solids.append(f.extrude(FreeCAD.Vector(0, 0, height)))
-            except Exception:
-                pass
+            try: solids.append(f.extrude(FreeCAD.Vector(0, 0, height)))
+            except Exception: pass
 
     if solids:
         compound = solids[0]
         for s in solids[1:]:
-            try:
-                compound = compound.fuse(s)
-            except Exception:
-                pass
+            try: compound = compound.fuse(s)
+            except Exception: pass
         return compound
 
-    # Step 4: 最終フォールバック
-    try:
-        return shape.extrude(FreeCAD.Vector(0, 0, height))
-    except Exception:
-        return None
-
+    try: return shape.extrude(FreeCAD.Vector(0, 0, height))
+    except Exception: return None
 
 def make_filled_face_from_shape(shape_2d):
-    """ 2D文字形状から内部の穴を除去し、完全な塗りつぶし外郭Faceを作成 """
     faces = []
     if hasattr(shape_2d, 'Faces') and shape_2d.Faces:
         for f in shape_2d.Faces:
-            try:
-                filled_f = Part.Face(f.OuterWire)
-                faces.append(filled_f)
-            except Exception:
-                faces.append(f)
+            try: faces.append(Part.Face(f.OuterWire))
+            except Exception: faces.append(f)
     elif hasattr(shape_2d, 'Wires') and shape_2d.Wires:
         for w in shape_2d.Wires:
-            try:
-                faces.append(Part.Face(w))
-            except Exception:
-                pass
-    
-    if not faces:
-        return None
-    
+            try: faces.append(Part.Face(w))
+            except Exception: pass
+    if not faces: return None
     comp = faces[0]
     for f in faces[1:]:
-        try:
-            comp = comp.fuse(f)
-        except Exception:
-            pass
+        try: comp = comp.fuse(f)
+        except Exception: pass
     return comp
 
-
 class Text3DDialog(QtWidgets.QDialog):
-    """ 3D文字作成ダイアログ """
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("3D文字・銘板の作成")
         self.resize(760, 530)
-        
         self.categorized_fonts = {}
         self.init_ui()
 
@@ -308,7 +196,6 @@ class Text3DDialog(QtWidgets.QDialog):
         content_layout = QtWidgets.QHBoxLayout()
         content_layout.setSpacing(12)
 
-        # ?? 左カラム: テキスト入力 & フォント設定
         left_widget = QtWidgets.QWidget()
         left_layout = QtWidgets.QVBoxLayout(left_widget)
         left_layout.setContentsMargins(0, 0, 0, 0)
@@ -324,30 +211,17 @@ class Text3DDialog(QtWidgets.QDialog):
         align_layout = QtWidgets.QHBoxLayout()
         align_layout.addWidget(QtWidgets.QLabel("配置揃え:"))
         self.combo_align = QtWidgets.QComboBox()
-        self.combo_align.addItems([
-            "中央揃え (Center)",
-            "左揃え (Left)",
-            "右揃え (Right)"
-        ])
+        self.combo_align.addItems(["中央揃え (Center)", "左揃え (Left)", "右揃え (Right)"])
         align_layout.addWidget(self.combo_align, 1)
         text_layout.addLayout(align_layout)
         left_layout.addWidget(text_group)
 
         font_group = QtWidgets.QGroupBox("フォント設定")
         font_layout = QtWidgets.QVBoxLayout(font_group)
-
         form_sub = QtWidgets.QFormLayout()
-        form_sub.setFieldGrowthPolicy(QtWidgets.QFormLayout.AllNonFixedFieldsGrow)
 
         self.combo_lang = QtWidgets.QComboBox()
-        self.combo_lang.addItems([
-            "日本語 (Japanese)",
-            "英語・汎用 (English/Latin)",
-            "奇抜・デザイン (Novelty/Fancy)",
-            "特殊文字 (Symbols/Special)",
-            "その他 (Other)",
-            "すべて (All)"
-        ])
+        self.combo_lang.addItems(["日本語 (Japanese)", "英語・汎用 (English/Latin)", "奇抜・デザイン (Novelty/Fancy)", "特殊文字 (Symbols/Special)", "その他 (Other)", "すべて (All)"])
         
         self.combo_family = QtWidgets.QComboBox()
         self.combo_style = QtWidgets.QComboBox()
@@ -376,19 +250,10 @@ class Text3DDialog(QtWidgets.QDialog):
         self.lbl_font_sample = QtWidgets.QLabel("FreeCAD 3D文字 Sample")
         self.lbl_font_sample.setAlignment(QtCore.Qt.AlignCenter)
         self.lbl_font_sample.setMinimumHeight(65)
-        self.lbl_font_sample.setStyleSheet("""
-            QLabel {
-                background-color: #ffffff;
-                border: 1px solid #b0b0b0;
-                border-radius: 4px;
-                padding: 6px;
-                color: #111111;
-            }
-        """)
+        self.lbl_font_sample.setStyleSheet("QLabel { background-color: #ffffff; border: 1px solid #b0b0b0; border-radius: 4px; padding: 6px; color: #111111; }")
         font_layout.addWidget(self.lbl_font_sample)
         left_layout.addWidget(font_group)
 
-        # ?? 右カラム: 3Dパラメータ & 土台プレート設定
         right_widget = QtWidgets.QWidget()
         right_layout = QtWidgets.QVBoxLayout(right_widget)
         right_layout.setContentsMargins(0, 0, 0, 0)
@@ -423,12 +288,7 @@ class Text3DDialog(QtWidgets.QDialog):
         self.chk_add_base.setChecked(True)
 
         self.combo_base_shape = QtWidgets.QComboBox()
-        self.combo_base_shape.addItems([
-            "長方形 (Rectangle)",
-            "楕円 (Ellipse)",
-            "円 (Circle)",
-            "ダイカット / モコモコ (Die-cut)"
-        ])
+        self.combo_base_shape.addItems(["長方形 (Rectangle)", "楕円 (Ellipse)", "円 (Circle)", "ダイカット / モコモコ (Die-cut)"])
         self.combo_base_shape.currentIndexChanged.connect(self.update_radius_state)
 
         self.spin_base_radius = QtWidgets.QDoubleSpinBox()
@@ -437,10 +297,7 @@ class Text3DDialog(QtWidgets.QDialog):
         self.spin_base_radius.setSuffix(" mm")
 
         self.combo_base_mode = QtWidgets.QComboBox()
-        self.combo_base_mode.addItems([
-            "文字を上に載せる (凸 / 浮き彫り)",
-            "文字をプレートに掘り込む (凹 / 彫り込み)"
-        ])
+        self.combo_base_mode.addItems(["文字を上に載せる (凸 / 浮き彫り)", "文字をプレートに掘り込む (凹 / 彫り込み)"])
 
         self.spin_base_padding = QtWidgets.QDoubleSpinBox()
         self.spin_base_padding.setRange(0.0, 100.0)
@@ -453,12 +310,7 @@ class Text3DDialog(QtWidgets.QDialog):
         self.spin_base_thick.setSuffix(" mm")
 
         self.combo_holes = QtWidgets.QComboBox()
-        self.combo_holes.addItems([
-            "なし (None)",
-            "左側に1つ (キーホルダー用)",
-            "左右に2つ (ネジ留め用)",
-            "四隅に4つ (プレート固定用)"
-        ])
+        self.combo_holes.addItems(["なし (None)", "左側に1つ (キーホルダー用)", "左右に2つ (ネジ留め用)", "四隅に4つ (プレート固定用)"])
         self.combo_holes.currentIndexChanged.connect(self.update_hole_state)
 
         self.spin_hole_dia = QtWidgets.QDoubleSpinBox()
@@ -481,9 +333,7 @@ class Text3DDialog(QtWidgets.QDialog):
         content_layout.addWidget(right_widget, 1)
         main_layout.addLayout(content_layout)
 
-        btn_box = QtWidgets.QDialogButtonBox(
-            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel
-        )
+        btn_box = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
         btn_box.accepted.connect(self.accept)
         btn_box.rejected.connect(self.reject)
         main_layout.addWidget(btn_box)
@@ -508,14 +358,15 @@ class Text3DDialog(QtWidgets.QDialog):
     def update_family_dropdown(self):
         self.combo_family.blockSignals(True)
         self.combo_family.clear()
-        selected_lang = self.combo_lang.currentText()
         
-        families_dict = self.categorized_fonts.get(selected_lang, {})
+        # 多言語環境でも安全なインデックス数値指定に修正
+        selected_cat_idx = self.combo_lang.currentIndex()
+        families_dict = self.categorized_fonts.get(selected_cat_idx, {})
         family_names = sorted(list(families_dict.keys()))
 
         if not family_names:
-            if selected_lang != "すべて (All)":
-                all_fonts = self.categorized_fonts.get("すべて (All)", {})
+            if selected_cat_idx != 5:
+                all_fonts = self.categorized_fonts.get(5, {})
                 if all_fonts:
                     self.combo_family.addItem("※ 該当カテゴリなし")
                     self.combo_family.setEnabled(False)
@@ -536,10 +387,10 @@ class Text3DDialog(QtWidgets.QDialog):
         self.combo_style.blockSignals(True)
         self.combo_style.clear()
         
-        selected_lang = self.combo_lang.currentText()
+        selected_cat_idx = self.combo_lang.currentIndex()
         selected_family = self.combo_family.currentText()
         
-        styles_dict = self.categorized_fonts.get(selected_lang, {}).get(selected_family, {})
+        styles_dict = self.categorized_fonts.get(selected_cat_idx, {}).get(selected_family, {})
         style_names = sorted(list(styles_dict.keys()))
 
         if not style_names or not self.combo_family.isEnabled():
@@ -560,8 +411,7 @@ class Text3DDialog(QtWidgets.QDialog):
         self.update_font_preview()
 
     def update_font_preview(self):
-        if not hasattr(self, 'lbl_font_path'):
-            return
+        if not hasattr(self, 'lbl_font_path'): return
             
         if not self.combo_style.isEnabled():
             self.lbl_font_path.setText("フォント未検出")
@@ -569,11 +419,11 @@ class Text3DDialog(QtWidgets.QDialog):
             self.lbl_font_sample.setFont(QtGui.QFont())
             return
         
-        selected_lang = self.combo_lang.currentText()
+        selected_cat_idx = self.combo_lang.currentIndex()
         selected_family = self.combo_family.currentText()
         selected_style = self.combo_style.currentText()
         
-        font_path = self.categorized_fonts.get(selected_lang, {}).get(selected_family, {}).get(selected_style, "")
+        font_path = self.categorized_fonts.get(selected_cat_idx, {}).get(selected_family, {}).get(selected_style, "")
         self.lbl_font_path.setText(font_path if font_path else "未選択")
 
         display_preview = self.txt_input.toPlainText() or "FreeCAD"
@@ -595,21 +445,18 @@ class Text3DDialog(QtWidgets.QDialog):
         font_dir = get_bundled_font_dir()
         system = platform.system()
         try:
-            if system == "Windows":
-                os.startfile(font_dir)
-            elif system == "Darwin":
-                subprocess.Popen(["open", font_dir])
-            else:
-                subprocess.Popen(["xdg-open", font_dir])
+            if system == "Windows": os.startfile(font_dir)
+            elif system == "Darwin": subprocess.Popen(["open", font_dir])
+            else: subprocess.Popen(["xdg-open", font_dir])
         except Exception as e:
             QtWidgets.QMessageBox.warning(self, "エラー", f"フォルダを開けませんでした:\n{str(e)}")
 
     def get_values(self):
-        selected_lang = self.combo_lang.currentText()
+        selected_cat_idx = self.combo_lang.currentIndex()
         selected_family = self.combo_family.currentText()
         selected_style = self.combo_style.currentText()
         
-        font_path = self.categorized_fonts.get(selected_lang, {}).get(selected_family, {}).get(selected_style, "")
+        font_path = self.categorized_fonts.get(selected_cat_idx, {}).get(selected_family, {}).get(selected_style, "")
         
         return {
             'text': self.txt_input.toPlainText(),
@@ -627,7 +474,6 @@ class Text3DDialog(QtWidgets.QDialog):
             'hole_type': self.combo_holes.currentIndex(),
             'hole_dia': self.spin_hole_dia.value(),
         }
-
 
 class Tool_Make3DText:
     def GetResources(self):
@@ -673,7 +519,6 @@ class Tool_Make3DText:
             if tracking < min_safe_tracking:
                 tracking = min_safe_tracking
 
-        # --- 進捗ダイアログの初期化 ＆ 開始 ---
         pm = ProgressManager()
         pm.start("3D文字の生成中", "文字データを解析中...")
 
@@ -682,16 +527,13 @@ class Tool_Make3DText:
         try:
             lines = text.split('\n')
             total_chars = sum([len(line.strip()) for line in lines if line.strip()])
-            if total_chars == 0:
-                total_chars = 1
+            if total_chars == 0: total_chars = 1
             processed_chars = 0
 
             all_line_data = []
 
-            # --- 1. 1文字ずつ分解生成 (10% ? 50%) ---
             for line in lines:
-                if not line:
-                    continue
+                if not line: continue
 
                 line_solids = []
                 line_2d_faces = []
@@ -722,10 +564,8 @@ class Tool_Make3DText:
                         c_solid = create_solid_from_shape(c_shape, height)
                         c_2d_filled = make_filled_face_from_shape(c_shape)
 
-                        if c_solid:
-                            line_solids.append(c_solid)
-                        if c_2d_filled:
-                            line_2d_faces.append(c_2d_filled)
+                        if c_solid: line_solids.append(c_solid)
+                        if c_2d_filled: line_2d_faces.append(c_2d_filled)
 
                         x_cursor += c_w + (size * 0.1) + tracking
 
@@ -743,7 +583,6 @@ class Tool_Make3DText:
                 doc.abortTransaction()
                 return
 
-            # --- 2. 複数行 & 位置揃え (50% ? 65%) ---
             pm.update(55, "レイアウト位置を調整中...")
             max_w = max([ld['width'] for ld in all_line_data])
             current_y = 0.0
@@ -754,12 +593,9 @@ class Tool_Make3DText:
 
             for ld in all_line_data:
                 l_width = ld['width']
-                if align_type == 0:   # 中央揃え
-                    offset_x = -l_width / 2.0
-                elif align_type == 2: # 右揃え
-                    offset_x = (max_w / 2.0) - l_width
-                else:                 # 左揃え
-                    offset_x = -max_w / 2.0
+                if align_type == 0: offset_x = -l_width / 2.0
+                elif align_type == 2: offset_x = (max_w / 2.0) - l_width
+                else: offset_x = -max_w / 2.0
 
                 shift_v = FreeCAD.Vector(offset_x, current_y, 0)
 
@@ -777,14 +613,11 @@ class Tool_Make3DText:
 
             text_compound = final_solids[0]
             for s in final_solids[1:]:
-                try:
-                    text_compound = text_compound.fuse(s)
-                except Exception:
-                    pass
+                try: text_compound = text_compound.fuse(s)
+                except Exception: pass
 
             final_shape = text_compound
 
-            # --- 3. 土台プレート生成 (65% ? 85%) ---
             if add_base:
                 pm.update(70, "土台プレートを計算中...")
                 bbox = text_compound.BoundBox
@@ -800,7 +633,6 @@ class Tool_Make3DText:
                 half_h = (p_max_y - p_min_y) / 2.0
 
                 if base_shape_type == 0:
-                    # 1. 長方形
                     width = half_w * 2.0
                     length = half_h * 2.0
                     base_box = Part.makeBox(width, length, base_thick)
@@ -816,13 +648,10 @@ class Tool_Make3DText:
                                 if abs(v1.x - v2.x) < 1e-4 and abs(v1.y - v2.y) < 1e-4:
                                     edges_to_fillet.append(e)
                             if edges_to_fillet:
-                                try:
-                                    base_box = base_box.makeFillet(r, edges_to_fillet)
-                                except:
-                                    pass
+                                try: base_box = base_box.makeFillet(r, edges_to_fillet)
+                                except Exception: pass
 
                 elif base_shape_type == 1:
-                    # 2. 楕円
                     a = half_w * math.sqrt(2.0)
                     b = half_h * math.sqrt(2.0)
                     if a >= b:
@@ -838,12 +667,10 @@ class Tool_Make3DText:
                     base_box = face.extrude(FreeCAD.Vector(0, 0, base_thick))
 
                 elif base_shape_type == 2:
-                    # 3. 円
                     radius = math.sqrt(half_w**2 + half_h**2)
                     base_box = Part.makeCylinder(radius, base_thick, FreeCAD.Vector(c_x, c_y, -base_thick))
 
                 elif base_shape_type == 3:
-                    # 4. ダイカット / モコモコ (Die-cut)
                     pm.update(75, "モコモコ輪郭(2Dオフセット)を生成中...")
                     effective_pad = max(base_padding, size * 0.25) + (size * 0.15)
                     
@@ -852,45 +679,35 @@ class Tool_Make3DText:
                         try:
                             off_shape = f2d.makeOffset2D(effective_pad, 0)
                             raw_offsets.append(off_shape)
-                        except Exception:
-                            pass
+                        except Exception: pass
 
                     if raw_offsets:
                         pm.update(80, "モコモコ輪郭の隙間を滑らかに結合中...")
                         merged_2d = raw_offsets[0]
                         for ro in raw_offsets[1:]:
-                            try:
-                                merged_2d = merged_2d.fuse(ro)
-                            except Exception:
-                                pass
+                            try: merged_2d = merged_2d.fuse(ro)
+                            except Exception: pass
 
                         try:
                             bridge_off = merged_2d.makeOffset2D(size * 0.2, 0)
                             merged_2d = bridge_off.makeOffset2D(-size * 0.2, 0)
-                        except Exception:
-                            pass
+                        except Exception: pass
 
                         clean_faces = []
                         if hasattr(merged_2d, 'Faces') and merged_2d.Faces:
                             for f in merged_2d.Faces:
-                                try:
-                                    clean_faces.append(Part.Face(f.OuterWire))
-                                except Exception:
-                                    clean_faces.append(f)
+                                try: clean_faces.append(Part.Face(f.OuterWire))
+                                except Exception: clean_faces.append(f)
                         elif hasattr(merged_2d, 'Wires') and merged_2d.Wires:
                             for w in merged_2d.Wires:
-                                try:
-                                    clean_faces.append(Part.Face(w))
-                                except Exception:
-                                    pass
+                                try: clean_faces.append(Part.Face(w))
+                                except Exception: pass
 
                         if clean_faces:
                             unified_2d = clean_faces[0]
                             for cf in clean_faces[1:]:
-                                try:
-                                    unified_2d = unified_2d.fuse(cf)
-                                except Exception:
-                                    pass
+                                try: unified_2d = unified_2d.fuse(cf)
+                                except Exception: pass
                             
                             unified_2d.translate(FreeCAD.Vector(0, 0, -base_thick))
                             base_box = unified_2d.extrude(FreeCAD.Vector(0, 0, base_thick))
@@ -905,29 +722,22 @@ class Tool_Make3DText:
                         base_box = Part.makeBox(width, length, base_thick)
                         base_box.translate(FreeCAD.Vector(p_min_x, p_min_y, -base_thick))
 
-                # --- 4. 文字とプレートの合成・ブーリアン処理 (85% ? 95%) ---
                 pm.update(85, "文字とプレートを合成中...")
                 if base_mode == 0:
-                    try:
-                        final_shape = text_compound.fuse(base_box)
-                    except Exception:
-                        final_shape = base_box.fuse(text_compound)
+                    try: final_shape = text_compound.fuse(base_box)
+                    except Exception: final_shape = base_box.fuse(text_compound)
                 else:
                     text_cut = text_compound.copy()
                     text_cut.translate(FreeCAD.Vector(0, 0, -height + 0.01))
                     final_shape = base_box.cut(text_cut)
 
-                # --- 5. 取付穴処理 ---
                 hole_shapes = []
                 edge_margin = (hole_dia / 2.0) + 3.0
 
                 if hole_type == 1:
-                    if base_shape_type in [0, 3]:
-                        hx = p_min_x + edge_margin
-                    elif base_shape_type == 1:
-                        hx = c_x - a + edge_margin
-                    else:
-                        hx = c_x - radius + edge_margin
+                    if base_shape_type in [0, 3]: hx = p_min_x + edge_margin
+                    elif base_shape_type == 1: hx = c_x - a + edge_margin
+                    else: hx = c_x - radius + edge_margin
                         
                     cyl = Part.makeCylinder(hole_dia / 2.0, base_thick + height + 2.0, FreeCAD.Vector(hx, c_y, -base_thick - 1.0))
                     hole_shapes.append(cyl)
@@ -971,7 +781,6 @@ class Tool_Make3DText:
                         hole_compound = hole_compound.fuse(hs)
                     final_shape = final_shape.cut(hole_compound)
 
-            # --- 6. 3Dモデル生成完了・画面描画 (95% ? 100%) ---
             pm.update(98, "3Dモデルを配置中...")
             text_obj = doc.addObject("Part::Feature", "3D_Text")
             text_obj.Shape = final_shape
@@ -986,8 +795,6 @@ class Tool_Make3DText:
             doc.abortTransaction()
             QtWidgets.QMessageBox.critical(None, "エラー", f"3D文字の生成中にエラーが発生しました:\n{str(e)}")
         finally:
-            # 万が一途中でエラーが起きても確実に進捗ダイアログを閉じ画面フリーズを解除
             pm.close()
-
 
 FreeCADGui.addCommand('Ring_Make3DText', Tool_Make3DText())

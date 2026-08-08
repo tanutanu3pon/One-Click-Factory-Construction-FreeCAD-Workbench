@@ -1,10 +1,8 @@
 # -*- coding: utf-8 -*-
-# Tool/CalcWall.py
 import os
 import FreeCAD
 import FreeCADGui
 import Part
-
 from Core.QtCompat import QtWidgets, QtGui, QtCore
 
 class Tool_CalcWall:
@@ -23,22 +21,17 @@ class Tool_CalcWall:
             return
             
         obj = sel[0]
-        # ★修正箇所：IsNull() を isNull() に変更し、さらに面(Faces)の存在チェックも追加して鉄壁にガード
         if not hasattr(obj, "Shape") or obj.Shape.isNull() or not obj.Shape.Faces:
             QtWidgets.QMessageBox.warning(None, "エラー", "有効な形状を持たないオブジェクトです。")
             return
             
         shape = obj.Shape
-        
-        # 1. 体積計算 (内部単位 mm3 -> 実寸 m3)
         volume_m3 = shape.Volume / 1e9
         
-        # 2. 3D境界ボックスを取得して各面の位置を自動判別
         bbox = shape.BoundBox
         y_tol = (bbox.YMax - bbox.YMin) * 0.1 if (bbox.YMax - bbox.YMin) > 0 else 1.0
         z_tol = (bbox.ZMax - bbox.ZMin) * 0.1 if (bbox.ZMax - bbox.ZMin) > 0 else 1.0
         
-        # 各カテゴリの面積カウンター（単位: m2）
         faces_info = {
             "底面 (GL接触部)": 0.0,
             "天端面 (上面)": 0.0,
@@ -55,24 +48,20 @@ class Tool_CalcWall:
             area_m2 = face.Area / 1e6
             total_area_m2 += area_m2
             
-            # ① Y軸の最端にある面 ? 手前面 または 奥側面
             if abs(c.y - bbox.YMin) < y_tol:
                 faces_info["手前面 (始点側 Y=0)"] += area_m2
             elif abs(c.y - bbox.YMax) < y_tol:
                 faces_info["奥側面 (終点側 Y=L)"] += area_m2
-            # ② Z軸の最端にある面 ? 底面 または 天端面
             elif abs(c.z - bbox.ZMin) < z_tol:
                 faces_info["底面 (GL接触部)"] += area_m2
             elif abs(c.z - bbox.ZMax) < z_tol:
                 faces_info["天端面 (上面)"] += area_m2
-            # ③ 残った側面をX軸の中心位置より左右どちらかで判定 ? 表 or 裏
             else:
                 if c.x < bbox.Center.x:
                     faces_info["裏面 (垂直・土砂埋戻し側)"] += area_m2
                 else:
                     faces_info["表面 (勾配・見えがかり側)"] += area_m2
                     
-        # 3. HTMLレイアウトで綺麗に出力画面を構築
         msg = f"<h3>【数量計算レポート : {obj.Label}】</h3><hr>"
         msg += f"<b>■ 体積 (コンクリート体積):</b><br>"
         msg += f"&nbsp;&nbsp;&nbsp;&nbsp;<font color='#0055ff' size='5'><b>{volume_m3:.1f} m3</b></font><br><br>"
@@ -87,5 +76,4 @@ class Tool_CalcWall:
         
         QtWidgets.QMessageBox.information(None, "数量計算結果", msg)
 
-# 新規コマンドとして登録
 FreeCADGui.addCommand('Construction_CalcWall', Tool_CalcWall())
