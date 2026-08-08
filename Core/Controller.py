@@ -9,11 +9,9 @@ import FreeCADGui
 
 def translate_text(text, lang):
     import Core.Dictionary as Dictionary
-    # 日本語（デフォルト）または空文字の場合はそのまま返す
     if lang == "日本語" or not text:
         return text
     
-    # 常に最新の辞書を参照する
     trans_dict = Dictionary.TRANSLATION_DICT
 
     if text in trans_dict:
@@ -38,7 +36,6 @@ def auto_translate_widget(widget, lang):
     if lang == "日本語":
         return
     
-    # ★直接インポートを削除し、QtCompatを使用
     from Core.QtCompat import QtWidgets
         
     if hasattr(widget, "windowTitle") and widget.windowTitle():
@@ -74,20 +71,19 @@ def register_workbench(base_path):
             orig_get_resources = command_obj.GetResources
             def wrapped_get_resources(*args, **kwargs):
                 import Core.Language as Language
-                # UI登録時はその時点の言語を取得
                 current_lang = Language.get_language()
                 res = orig_get_resources(*args, **kwargs)
-                if 'MenuText' in res:
-                    res['MenuText'] = translate_text(res['MenuText'] if 'の作成' in res['MenuText'] else f"{res['MenuText']}の作成", current_lang)
-                if 'ToolTip' in res:
-                    res['ToolTip'] = translate_text(res['ToolTip'] if 'を作成します' in res['ToolTip'] else f"{res['ToolTip']}を作成します", current_lang)
+                
+                if 'MenuText' in res and res['MenuText']:
+                    res['MenuText'] = translate_text(res['MenuText'], current_lang)
+                if 'ToolTip' in res and res['ToolTip']:
+                    res['ToolTip'] = translate_text(res['ToolTip'], current_lang)
                 return res
             command_obj.GetResources = wrapped_get_resources
 
         if hasattr(command_obj, 'Activated'):
             orig_activated = command_obj.Activated
             def wrapped_activated(*args, **kwargs):
-                # ★直接インポートを削除し、QtCompatを使用
                 from Core.QtCompat import QtWidgets
                 
                 try:
@@ -97,16 +93,13 @@ def register_workbench(base_path):
                     FreeCAD.Console.PrintError(traceback.format_exc())
                     
                     doc = FreeCAD.activeDocument()
-                    # エラー発生時はトランザクションを安全に破棄
                     if doc and hasattr(doc, 'hasPendingTransaction') and doc.hasPendingTransaction():
                         doc.abortTransaction()
                     
-                    # 画面フリーズの解除
                     main_win = FreeCADGui.getMainWindow()
                     if main_win:
                         main_win.setUpdatesEnabled(True)
                         
-                    # 残存しているプログレスバーがあれば閉じる
                     for widget in QtWidgets.QApplication.topLevelWidgets():
                         if isinstance(widget, QtWidgets.QProgressDialog):
                             widget.close()
@@ -167,7 +160,6 @@ def register_workbench(base_path):
             FreeCADGui.addCommand = custom_addCommand
             command_list = []
             
-            # ★ 修正: try...finally で囲んで確実に original_addCommand を復元する
             try:
                 for tool in tools_config:
                     module_name = f"Tool.{tool['module']}"
@@ -213,7 +205,6 @@ def register_workbench(base_path):
             FreeCADGui.addCommand = custom_addCommand
             command_list = []
             
-            # ★ 修正: try...finally で囲んで確実に original_addCommand を復元する
             try:
                 for tool in tools_config:
                     module_name = f"Tool.{tool['module']}"
