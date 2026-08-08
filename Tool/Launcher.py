@@ -1,9 +1,22 @@
 # -*- coding: utf-8 -*-
+# Tool/Launcher.py
 import os
 import FreeCAD
 import FreeCADGui
+
 from Core.QtCompat import QtWidgets, QtGui, QtCore
 
+# 言語設定と翻訳処理の読み込み
+try:
+    from Core.Controller import translate_text
+    from Core.Language import get_language
+except ImportError:
+    def translate_text(text, lang): return text
+    def get_language(): return "日本語"
+
+# ---------------------------------------------------------
+# [Ringワークベンチ用] 各ツールの初心者向け説明リスト (全24種)
+# ---------------------------------------------------------
 RING_TOOL_INFO_LIST = [
     {"id": "Ring_MakeRing", "name": "指輪の生成", "desc": "指輪のベースとなる3Dモデルを生成します。\n日本サイズ(号数)の指定や、甲丸・平打ちなどの断面形状をカスタマイズできます。"},
     {"id": "Ring_Tyoukoku", "name": "指輪への彫刻", "desc": "指輪の内側に文字を彫ることができます。日本語もOKです。"},
@@ -26,9 +39,14 @@ RING_TOOL_INFO_LIST = [
     {"id": "Ring_MakeSHook", "name": "S字フックの作成", "desc": "吊り下げ収納に役立つS字フックの3Dモデルを任意の太さ・サイズで作成します。"},
     {"id": "Ring_MakeCookie", "name": "クッキー抜き型の作成", "desc": "3Dプリンターで印刷して使えるクッキー用抜き型（外枠＋押し型）を作成します。任意の絵を参照してふちをかたどります。"},
     {"id": "Ring_MakePlanetaryGear", "name": "遊星リングギアの作成", "desc": "実際に組み合わせて回転させることができるメカニカルな遊星歯車機構を作成します。画面上で動作確認ができます。"},
-    {"id": "Ring_Make3DText", "name": "3D文字・銘板の作成", "desc": "フォントを指定して3D立体文字やネームプレート、キーホルダーを作成します。\n土台プレートの追加や角丸、取付穴の配置も自動で行えます。"}
+    {"id": "Ring_Make3DText", "name": "3D文字・銘板の作成", "desc": "フォントを指定して3D立体文字やネームプレート、キーホルダーを作成します。\n土台プレートの追加や角丸、取付穴の配置も自動で行えます。"},
+    {"id": "Ring_ModelPresenter", "name": "モデルお披露目・着色", "desc": "レンダリング：モデルをおしゃれに着色し、回転演出します。"},
+    {"id": "Ring_MakeFish", "name": "背骨から3Dモデルを作成", "desc": "作成した魚の泳いでいる線形から、魚釣りのルアー用のたい・まぐろ・さんま等の3Dモデルを生成します。"}
 ]
 
+# ---------------------------------------------------------
+# [Constructionワークベンチ用] 各ツールの初心者向け説明リスト (全6種)
+# ---------------------------------------------------------
 CONST_TOOL_INFO_LIST = [
     {"id": "Construction_MakeWall", "name": "擁壁(ようへき)の作成", "desc": "重力式擁壁などの構造物3Dモデルを生成します。\n高さや底盤長などのパラメータを任意に調整できます。"},
     {"id": "Construction_CalcWall", "name": "体積計算", "desc": "作成した擁壁の体積、表面積を算出します。"},
@@ -38,7 +56,9 @@ CONST_TOOL_INFO_LIST = [
     {"id": "Construction_CalcEarthworkSolid", "name": "切盛り土量の算出", "desc": "現況地形と計画形状の3Dソリッドモデルから、切土量・盛土量の体積（土量）を差分計算します。"}
 ]
 
+
 class ToolLauncherDialog(QtWidgets.QDialog):
+    """ 説明を見ながらツールを選んで実行できるランチャーダイアログ """
     def __init__(self, tool_list, title, parent=None):
         super().__init__(parent)
         self.tool_list = tool_list
@@ -56,8 +76,10 @@ class ToolLauncherDialog(QtWidgets.QDialog):
         self.combo_tools = QtWidgets.QComboBox()
         self.combo_tools.setStyleSheet("font-size: 11pt; padding: 4px;")
         
+        current_lang = get_language()
         for tool in self.tool_list:
-            self.combo_tools.addItem(tool["name"], tool)
+            name_trans = translate_text(tool["name"], current_lang)
+            self.combo_tools.addItem(name_trans, tool)
 
         select_layout.addWidget(self.combo_tools)
         main_layout.addWidget(select_group)
@@ -111,10 +133,11 @@ class ToolLauncherDialog(QtWidgets.QDialog):
 
     def update_description(self):
         tool_data = self.combo_tools.currentData()
+        current_lang = get_language()
         if tool_data and "desc" in tool_data:
-            self.lbl_desc.setText(tool_data["desc"])
+            self.lbl_desc.setText(translate_text(tool_data["desc"], current_lang))
         else:
-            self.lbl_desc.setText("説明が登録されていません。")
+            self.lbl_desc.setText(translate_text("説明が登録されていません。", current_lang))
 
     def run_selected_tool(self):
         tool_data = self.combo_tools.currentData()
@@ -122,6 +145,7 @@ class ToolLauncherDialog(QtWidgets.QDialog):
             cmd_id = tool_data["id"]
             self.accept()
             QtCore.QTimer.singleShot(100, lambda: FreeCADGui.runCommand(cmd_id))
+
 
 class Tool_LauncherRing:
     def GetResources(self):
@@ -137,6 +161,7 @@ class Tool_LauncherRing:
         dlg = ToolLauncherDialog(RING_TOOL_INFO_LIST, "Click Factory - 機能案内ガイド", FreeCADGui.getMainWindow())
         dlg.exec_()
 
+
 class Tool_LauncherConstruction:
     def GetResources(self):
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -150,6 +175,7 @@ class Tool_LauncherConstruction:
     def Activated(self):
         dlg = ToolLauncherDialog(CONST_TOOL_INFO_LIST, "Construction - 機能案内ガイド", FreeCADGui.getMainWindow())
         dlg.exec_()
+
 
 FreeCADGui.addCommand('Ring_Launcher', Tool_LauncherRing())
 FreeCADGui.addCommand('Construction_Launcher', Tool_LauncherConstruction())
