@@ -4,6 +4,7 @@ from Core.QtCompat import QtWidgets
 import FreeCAD
 
 _CURRENT_LANG = None
+_ALREADY_PROMPTED = False  # ★追加: 重複表示を防止するフラグ
 
 def get_language():
     """起動時はダイアログを出さず、設定から言語を静かに読み込む"""
@@ -34,9 +35,15 @@ def get_language():
     return _CURRENT_LANG
 
 
-def prompt_language():
+def prompt_language(force=False):
     """ワークベンチ起動時（アイコンクリック時）に呼ばれる、言語選択ダイアログ"""
-    global _CURRENT_LANG
+    global _CURRENT_LANG, _ALREADY_PROMPTED
+    
+    # ★改善ポイント: すでにダイアログを出した履歴があれば、2回目は強制キャンセル
+    if _ALREADY_PROMPTED and not force:
+        return get_language()
+        
+    _ALREADY_PROMPTED = True  # 表示したことを記録
     
     languages = [
         "日本語", 
@@ -60,7 +67,7 @@ def prompt_language():
             default_index, False
         )
         if ok and lang:
-            # ★改善ポイント: 前回と同じ言語なら重い保存処理をスキップして即終了
+            # 前回と同じ言語なら重い保存処理をスキップして即終了
             if lang == current:
                 return _CURRENT_LANG
             _CURRENT_LANG = lang
@@ -87,7 +94,7 @@ def prompt_language():
         elif "Русский" in _CURRENT_LANG:
             target_fc_lang = "Russian"
             
-        # ★改善ポイント: FreeCAD本体の設定と違う場合のみ書き換える
+        # FreeCAD本体の設定と違う場合のみ書き換える
         if param.GetString("Language", "") != target_fc_lang:
             param.SetString("Language", target_fc_lang)
             
