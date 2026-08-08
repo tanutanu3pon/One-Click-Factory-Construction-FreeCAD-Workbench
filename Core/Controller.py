@@ -166,17 +166,21 @@ def register_workbench(base_path):
 
             FreeCADGui.addCommand = custom_addCommand
             command_list = []
-            for tool in tools_config:
-                module_name = f"Tool.{tool['module']}"
-                try:
-                    importlib.import_module(module_name)
-                    command_list.append(tool['id'])
-                except (ImportError, ModuleNotFoundError):
-                    continue
-                except Exception as e:
-                    FreeCAD.Console.PrintWarning(f"ツール [{tool['module']}] スキップ: {str(e)}\n")
             
-            FreeCADGui.addCommand = original_addCommand
+            # ★ 修正: try...finally で囲んで確実に original_addCommand を復元する
+            try:
+                for tool in tools_config:
+                    module_name = f"Tool.{tool['module']}"
+                    try:
+                        importlib.import_module(module_name)
+                        command_list.append(tool['id'])
+                    except (ImportError, ModuleNotFoundError):
+                        continue
+                    except Exception as e:
+                        FreeCAD.Console.PrintWarning(f"ツール [{tool['module']}] スキップ: {str(e)}\n")
+            finally:
+                FreeCADGui.addCommand = original_addCommand
+                
             if command_list:
                 self.appendToolbar("Ring Tools", command_list)
                 self.appendMenu(["&Ring"], command_list)
@@ -208,17 +212,21 @@ def register_workbench(base_path):
 
             FreeCADGui.addCommand = custom_addCommand
             command_list = []
-            for tool in tools_config:
-                module_name = f"Tool.{tool['module']}"
-                try:
-                    importlib.import_module(module_name)
-                    command_list.append(tool['id'])
-                except (ImportError, ModuleNotFoundError):
-                    continue
-                except Exception as e:
-                    FreeCAD.Console.PrintWarning(f"ツール [{tool['module']}] スキップ: {str(e)}\n")
             
-            FreeCADGui.addCommand = original_addCommand
+            # ★ 修正: try...finally で囲んで確実に original_addCommand を復元する
+            try:
+                for tool in tools_config:
+                    module_name = f"Tool.{tool['module']}"
+                    try:
+                        importlib.import_module(module_name)
+                        command_list.append(tool['id'])
+                    except (ImportError, ModuleNotFoundError):
+                        continue
+                    except Exception as e:
+                        FreeCAD.Console.PrintWarning(f"ツール [{tool['module']}] スキップ: {str(e)}\n")
+            finally:
+                FreeCADGui.addCommand = original_addCommand
+                
             if command_list:
                 self.appendToolbar("Construction Tools", command_list)
                 self.appendMenu(["&Construction"], command_list)

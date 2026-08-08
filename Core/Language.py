@@ -39,6 +39,10 @@ def prompt_language(force=False):
     """ワークベンチ起動時（アイコンクリック時）に呼ばれる、言語選択ダイアログ"""
     global _CURRENT_LANG, _ALREADY_PROMPTED
     
+    # ★修正: GUIが起動していない場合はダイアログを出さずに設定値を返す（CUIモードのクラッシュ回避）
+    if not FreeCAD.GuiUp:
+        return get_language()
+    
     # ★改善ポイント: すでにダイアログを出した履歴があれば、2回目は強制キャンセル
     if _ALREADY_PROMPTED and not force:
         return get_language()
