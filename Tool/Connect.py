@@ -23,17 +23,17 @@ class Tool_ConnectJewelry:
         
         if len(sel) != 2:
             msg = "エラー: 2つの立体モデルを選択してください。\n\n"
-            msg += "1. 輪(リング)をクリック\n"
-            msg += "2. CTRLキーを押しながら飾りをクリック\n"
-            msg += "その後にこのアイコンを押してください。"
+            msg += "・指輪（リング）と飾り（ダイヤモンド等）の2つを選択して実行してください。\n"
+            msg += "（選択順序はどちらが先でも自動判定されます）"
             QtWidgets.QMessageBox.warning(None, "選択エラー", msg)
             return
 
         doc = FreeCAD.activeDocument()
-        obj_ring = sel[0]  
-        obj_daiya = sel[1] 
+        
+        obj1 = sel[0]
+        obj2 = sel[1]
 
-        if not hasattr(obj_ring, "Shape") or not hasattr(obj_daiya, "Shape"):
+        if not hasattr(obj1, "Shape") or not hasattr(obj2, "Shape") or obj1.Shape.isNull() or obj2.Shape.isNull():
             QtWidgets.QMessageBox.warning(None, "エラー", "立体モデルではないオブジェクトが選択されています。")
             return
 
@@ -41,36 +41,52 @@ class Tool_ConnectJewelry:
         if not ok: return
 
         with Progress.ProgressManager() as bar:
-            bar.start(title="ジュエリー結合処理", initial_text="オブジェクトの3D座標を解析中...")
+            bar.start(title="ジュエリー結合処理", initial_text="オブジェクトの3Dサイズと位置を解析中...")
 
-            shape_ring = obj_ring.Shape.copy()
-            shape_ring.Placement = obj_ring.Placement
-            ring_bbox = shape_ring.BoundBox
-
-            center_x = (ring_bbox.XMax + ring_bbox.XMin) / 2.0
-            center_z = (ring_bbox.ZMax + ring_bbox.ZMin) / 2.0
-
-            shape_daiya = obj_daiya.Shape.copy()
+            # グローバル座標を正確に反映した形状を複製
+            shape1 = obj1.Shape.copy()
+            shape1.transformShape(obj1.getGlobalPlacement().toMatrix())
             
-            bar.update(25, "ダイヤを垂直（側面埋め込み向き）に回転中...")
-            
+            shape2 = obj2.Shape.copy()
+            shape2.transformShape(obj2.getGlobalPlacement().toMatrix())
+
+            # サイズが大きい方を「指輪」、小さい方を「ダイヤ/飾り」として自動判定
+            diag1 = shape1.BoundBox.DiagonalLength
+            diag2 = shape2.BoundBox.DiagonalLength
+
+            if diag1 >= diag2:
+                obj_ring, shape_ring = obj1, shape1
+                obj_daiya, shape_daiya = obj2, shape2
+            else:
+                obj_ring, shape_ring = obj2, shape2
+                obj_daiya, shape_daiya = obj1, shape1
+
+            bar.update(30, "ダイヤを指輪の外周向き（Y軸方向）へ回転・整列中...")
+
+            # ダイヤの先端を指輪の内側へ、テーブル面（天面）を指輪の外側へ向けるため90度回転
             rot = FreeCAD.Rotation(FreeCAD.Vector(1, 0, 0), 90)
             shape_daiya.Placement = FreeCAD.Placement(FreeCAD.Vector(0,0,0), rot)
+
+            # 回転後のバウンディングボックスを取得
+            ring_bbox = shape_ring.BoundBox
             daiya_bbox = shape_daiya.BoundBox
 
-            bar.update(45, "指輪の側面にダイヤの位置を正確にフィッティング中...")
-
+            # 指輪のセンタリング座標 (X, Z) と 外周トップ (YMax)
+            ring_center_x = (ring_bbox.XMin + ring_bbox.XMax) / 2.0
+            ring_center_z = (ring_bbox.ZMin + ring_bbox.ZMax) / 2.0
             target_y = ring_bbox.YMax - embed_depth
-            
+
+            # 移動量の計算
+            move_x = ring_center_x - ((daiya_bbox.XMin + daiya_bbox.XMax) / 2.0)
+            move_z = ring_center_z - ((daiya_bbox.ZMin + daiya_bbox.ZMax) / 2.0)
             move_y = target_y - daiya_bbox.YMin
-            move_x = center_x - ((daiya_bbox.XMax + daiya_bbox.XMin) / 2.0)
-            move_z = center_z - ((daiya_bbox.ZMax + daiya_bbox.ZMin) / 2.0)
 
             shape_daiya.translate(FreeCAD.Vector(move_x, move_y, move_z))
 
             try:
-                bar.update(60, "ステップ1: フラット底面用の穴あけカッターを最適化中...")
+                bar.update(60, "ステップ1: フラット底面用の石座カッターを準備中...")
                 cutter_shape = shape_daiya.copy()
+                # 確実に重ね合わせをつくるためマイナスY方向へ微小オフセット
                 cutter_shape.translate(FreeCAD.Vector(0, -0.02, 0))
                 
                 bar.update(75, "ステップ2: 指輪にピッタリの石座（穴）を減算カット中...")
