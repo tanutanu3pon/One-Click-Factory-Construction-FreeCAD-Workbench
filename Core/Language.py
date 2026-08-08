@@ -18,14 +18,14 @@ def get_language():
         param = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/General")
         lang_code = param.GetString("Language", "Japanese")
         
-        # FreeCADの内部言語コードとのマッピング
+        # FreeCADの内部言語コードとのマッピング（文字化けを修正）
         lang_map = {
             "Japanese": "日本語",
             "English": "English",
             "German": "Deutsch (ドイツ語)",
             "French": "Francais (フランス語)",
             "Chinese Simplified": "中文 (中国語)",
-            "Korean": "??? (韓国語)",
+            "Korean": "Korean (韓国語)", 
             "Russian": "Русский (ロシア語)"
         }
         _CURRENT_LANG = lang_map.get(lang_code, "日本語")
@@ -45,13 +45,14 @@ def prompt_language(force=False):
         
     _ALREADY_PROMPTED = True  # 表示したことを記録
     
+    # リスト内の文字化けも修正
     languages = [
         "日本語", 
         "English", 
         "Deutsch (ドイツ語)", 
         "Francais (フランス語)", 
         "中文 (中国語)", 
-        "??? (韓国語)", 
+        "Korean (韓国語)", 
         "Русский (ロシア語)"
     ]
     
@@ -89,7 +90,7 @@ def prompt_language(force=False):
             target_fc_lang = "French"
         elif "中文" in _CURRENT_LANG:
             target_fc_lang = "Chinese Simplified"
-        elif "???" in _CURRENT_LANG:
+        elif "Korean" in _CURRENT_LANG: # 照合ロジックの文字化けを修正
             target_fc_lang = "Korean"
         elif "Русский" in _CURRENT_LANG:
             target_fc_lang = "Russian"

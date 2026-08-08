@@ -23,13 +23,13 @@ def load_dictionary():
 
         current_lang = Language.get_language()
 
-        # 言語名から対応する辞書ファイル名を決定
+        # 言語名から対応する辞書ファイル名を決定（文字化けを修正）
         lang_file_map = {
             "English": "dictionary_en.json",
             "Deutsch": "dictionary_de.json",
             "Francais": "dictionary_fr.json",
             "中文": "dictionary_zh.json",
-            "??": "dictionary_ko.json",  # ※韓国語の文字化け部分（"??"）は元のコードに合わせています
+            "Korean": "dictionary_ko.json", 
             "Русский": "dictionary_ru.json",
         }
 

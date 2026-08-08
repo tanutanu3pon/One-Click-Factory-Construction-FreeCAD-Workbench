@@ -37,10 +37,9 @@ def translate_text(text, lang):
 def auto_translate_widget(widget, lang):
     if lang == "日本語":
         return
-    try:
-        from PySide2 import QtWidgets
-    except ImportError:
-        from PySide6 import QtWidgets
+    
+    # ★直接インポートを削除し、QtCompatを使用
+    from Core.QtCompat import QtWidgets
         
     if hasattr(widget, "windowTitle") and widget.windowTitle():
         widget.setWindowTitle(translate_text(widget.windowTitle(), lang))
@@ -88,98 +87,8 @@ def register_workbench(base_path):
         if hasattr(command_obj, 'Activated'):
             orig_activated = command_obj.Activated
             def wrapped_activated(*args, **kwargs):
-                import Core.Language as Language
-                # ★ツール実行時に最新の言語設定を動的に取得する
-                current_lang = Language.get_language()
-                
-                try:
-                    from PySide2 import QtWidgets
-                except ImportError:
-                    from PySide6 import QtWidgets
-                
-                orig_dialog_exec = getattr(QtWidgets.QDialog, 'exec_', None)
-                orig_dialog_exec_new = getattr(QtWidgets.QDialog, 'exec', None)
-                orig_dialog_show = QtWidgets.QDialog.show
-                orig_msg_exec = getattr(QtWidgets.QMessageBox, 'exec_', None)
-                orig_msg_exec_new = getattr(QtWidgets.QMessageBox, 'exec', None)
-                orig_prog_show = QtWidgets.QProgressDialog.show
-                orig_prog_setLabel = QtWidgets.QProgressDialog.setLabelText
-                orig_prog_setWindow = QtWidgets.QProgressDialog.setWindowTitle
-                orig_input_getItem = QtWidgets.QInputDialog.getItem
-                orig_input_getDouble = QtWidgets.QInputDialog.getDouble
-                orig_input_getInt = QtWidgets.QInputDialog.getInt
-                orig_input_getText = QtWidgets.QInputDialog.getText
-                orig_msg_warning = QtWidgets.QMessageBox.warning
-                orig_msg_critical = QtWidgets.QMessageBox.critical
-                orig_msg_information = QtWidgets.QMessageBox.information
-                orig_msg_question = QtWidgets.QMessageBox.question
-
-                # --- 翻訳パッチ関数（current_lang を使用） ---
-                def patched_dialog_exec(dialog_self):
-                    auto_translate_widget(dialog_self, current_lang)
-                    return orig_dialog_exec(dialog_self) if orig_dialog_exec else orig_dialog_exec_new(dialog_self)
-                def patched_dialog_exec_new(dialog_self):
-                    auto_translate_widget(dialog_self, current_lang)
-                    return orig_dialog_exec_new(dialog_self)
-                def patched_dialog_show(dialog_self):
-                    auto_translate_widget(dialog_self, current_lang)
-                    return orig_dialog_show(dialog_self)
-                def patched_msg_exec(msg_self):
-                    auto_translate_widget(msg_self, current_lang)
-                    return orig_msg_exec(msg_self) if orig_msg_exec else orig_msg_exec_new(msg_self)
-                def patched_msg_exec_new(msg_self):
-                    auto_translate_widget(msg_self, current_lang)
-                    return orig_msg_exec_new(msg_self)
-                def patched_prog_show(prog_self):
-                    auto_translate_widget(prog_self, current_lang)
-                    return orig_prog_show(prog_self)
-                def patched_prog_setLabel(prog_self, text):
-                    return orig_prog_setLabel(prog_self, translate_text(text, current_lang))
-                def patched_prog_setWindow(prog_self, text):
-                    return orig_prog_setWindow(prog_self, translate_text(text, current_lang))
-
-                def patched_input_getItem(parent, title, label, items, *args, **kwargs):
-                    t_title = translate_text(title, current_lang)
-                    t_label = translate_text(label, current_lang)
-                    t_items = [translate_text(item, current_lang) for item in items]
-                    res_text, ok = orig_input_getItem(parent, t_title, t_label, t_items, *args, **kwargs)
-                    if ok and current_lang != "日本語":
-                        reverse_dict = {translate_text(item, current_lang): item for item in items}
-                        if res_text in reverse_dict:
-                            res_text = reverse_dict[res_text]
-                    return res_text, ok
-
-                def patched_input_getDouble(parent, title, label, *args, **kwargs):
-                    return orig_input_getDouble(parent, translate_text(title, current_lang), translate_text(label, current_lang), *args, **kwargs)
-                def patched_input_getInt(parent, title, label, *args, **kwargs):
-                    return orig_input_getInt(parent, translate_text(title, current_lang), translate_text(label, current_lang), *args, **kwargs)
-                def patched_input_getText(parent, title, label, *args, **kwargs):
-                    return orig_input_getText(parent, translate_text(title, current_lang), translate_text(label, current_lang), *args, **kwargs)
-                def patched_msg_warning(parent, title, text, *args, **kwargs):
-                    return orig_msg_warning(parent, translate_text(title, current_lang), translate_text(text, current_lang), *args, **kwargs)
-                def patched_msg_critical(parent, title, text, *args, **kwargs):
-                    return orig_msg_critical(parent, translate_text(title, current_lang), translate_text(text, current_lang), *args, **kwargs)
-                def patched_msg_information(parent, title, text, *args, **kwargs):
-                    return orig_msg_information(parent, translate_text(title, current_lang), translate_text(text, current_lang), *args, **kwargs)
-                def patched_msg_question(parent, title, text, *args, **kwargs):
-                    return orig_msg_question(parent, translate_text(title, current_lang), translate_text(text, current_lang), *args, **kwargs)
-
-                if orig_dialog_exec: QtWidgets.QDialog.exec_ = patched_dialog_exec
-                if orig_dialog_exec_new: QtWidgets.QDialog.exec = patched_dialog_exec_new
-                QtWidgets.QDialog.show = patched_dialog_show
-                if orig_msg_exec: QtWidgets.QMessageBox.exec_ = patched_msg_exec
-                if orig_msg_exec_new: QtWidgets.QMessageBox.exec = patched_msg_exec_new
-                QtWidgets.QProgressDialog.show = patched_prog_show
-                QtWidgets.QProgressDialog.setLabelText = patched_prog_setLabel
-                QtWidgets.QProgressDialog.setWindowTitle = patched_prog_setWindow
-                QtWidgets.QInputDialog.getItem = patched_input_getItem
-                QtWidgets.QInputDialog.getDouble = patched_input_getDouble
-                QtWidgets.QInputDialog.getInt = patched_input_getInt
-                QtWidgets.QInputDialog.getText = patched_input_getText
-                QtWidgets.QMessageBox.warning = patched_msg_warning
-                QtWidgets.QMessageBox.critical = patched_msg_critical
-                QtWidgets.QMessageBox.information = patched_msg_information
-                QtWidgets.QMessageBox.question = patched_msg_question
+                # ★直接インポートを削除し、QtCompatを使用
+                from Core.QtCompat import QtWidgets
                 
                 try:
                     orig_activated(*args, **kwargs)
@@ -188,36 +97,21 @@ def register_workbench(base_path):
                     FreeCAD.Console.PrintError(traceback.format_exc())
                     
                     doc = FreeCAD.activeDocument()
+                    # エラー発生時はトランザクションを安全に破棄
                     if doc and hasattr(doc, 'hasPendingTransaction') and doc.hasPendingTransaction():
                         doc.abortTransaction()
                     
+                    # 画面フリーズの解除
                     main_win = FreeCADGui.getMainWindow()
                     if main_win:
                         main_win.setUpdatesEnabled(True)
                         
+                    # 残存しているプログレスバーがあれば閉じる
                     for widget in QtWidgets.QApplication.topLevelWidgets():
                         if isinstance(widget, QtWidgets.QProgressDialog):
                             widget.close()
                             
                     QtWidgets.QMessageBox.critical(None, "ツール実行エラー", f"処理中に予期せぬエラーが発生しました。\n\n詳細:\n{str(e)}")
-                    
-                finally:
-                    if orig_dialog_exec: QtWidgets.QDialog.exec_ = orig_dialog_exec
-                    if orig_dialog_exec_new: QtWidgets.QDialog.exec = orig_dialog_exec_new
-                    QtWidgets.QDialog.show = orig_dialog_show
-                    if orig_msg_exec: QtWidgets.QMessageBox.exec_ = orig_msg_exec
-                    if orig_msg_exec_new: QtWidgets.QMessageBox.exec = orig_msg_exec_new
-                    QtWidgets.QProgressDialog.show = orig_prog_show
-                    QtWidgets.QProgressDialog.setLabelText = orig_prog_setLabel
-                    QtWidgets.QProgressDialog.setWindowTitle = orig_prog_setWindow
-                    QtWidgets.QInputDialog.getItem = orig_input_getItem
-                    QtWidgets.QInputDialog.getDouble = orig_input_getDouble
-                    QtWidgets.QInputDialog.getInt = orig_input_getInt
-                    QtWidgets.QInputDialog.getText = orig_input_getText
-                    QtWidgets.QMessageBox.warning = orig_msg_warning
-                    QtWidgets.QMessageBox.critical = orig_msg_critical
-                    QtWidgets.QMessageBox.information = orig_msg_information
-                    QtWidgets.QMessageBox.question = orig_msg_question
                         
             command_obj.Activated = wrapped_activated
 
