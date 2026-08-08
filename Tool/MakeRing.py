@@ -7,6 +7,14 @@ import math
 from Core.QtCompat import QtWidgets, QtGui, QtCore
 import Core.Progress as Progress
 
+# 翻訳機能の安全読み込み
+try:
+    from Core.Controller import translate_text
+    from Core.Language import get_language
+except ImportError:
+    def translate_text(text, lang): return text
+    def get_language(): return "日本語"
+
 class Tool_MakeRing:
     def GetResources(self):
         current_dir = os.path.dirname(__file__)
@@ -25,7 +33,6 @@ class Tool_MakeRing:
 
     def Activated(self):
         sizes = [str(i) for i in range(1, 31)]
-        # QtGui -> QtWidgets に修正 (PySide6 互換)
         size_str, ok1 = QtWidgets.QInputDialog.getItem(None, "サイズ選択", "リングサイズ (号):", sizes, 9, False)
         if not ok1: return
         size_num = int(size_str)
@@ -33,7 +40,17 @@ class Tool_MakeRing:
         types = ["フラット", "セミラウンド", "ラウンド"]
         ring_type, ok2 = QtWidgets.QInputDialog.getItem(None, "形状選択", "断面形状:", types, 1, False)
         if not ok2: return
-        type_idx = types.index(ring_type) # インデックス数値判定に修正
+
+        # 日本語・英語（翻訳済み）双方に対応した安全なインデックス取得
+        lang = get_language()
+        trans_types = [translate_text(t, lang) for t in types]
+        
+        if ring_type in types:
+            type_idx = types.index(ring_type)
+        elif ring_type in trans_types:
+            type_idx = trans_types.index(ring_type)
+        else:
+            type_idx = 1
 
         width, ok3 = QtWidgets.QInputDialog.getDouble(None, "寸法指定", "リングの幅 (mm):", 2.5, 1.0, 10.0, 1)
         if not ok3: return

@@ -1,11 +1,20 @@
 # -*- coding: utf-8 -*-
 import os
+import math
 import FreeCAD
 import FreeCADGui
 import Part
 import Draft
 from Core.QtCompat import QtWidgets, QtGui, QtCore
 import Core.Progress as Progress
+
+# 翻訳機能の安全読み込み
+try:
+    from Core.Controller import translate_text
+    from Core.Language import get_language
+except ImportError:
+    def translate_text(text, lang): return text
+    def get_language(): return "日本語"
 
 class Tool_Inkan:
     def GetResources(self):
@@ -24,17 +33,31 @@ class Tool_Inkan:
             "丸印 (シンプルな円柱)", 
             "角印 (シンプルな四角柱)",
             "丸スタンプ (持ち手付き)",
-            "角スタンプ (持ち手付き)"
+            "角スタンプ (持ち手付き)",
+            "小判印 (伝統的な楕円型)",
+            "八角印 (開運の八角柱)"
         ]
         selected_type, ok1 = QtWidgets.QInputDialog.getItem(None, "印鑑・スタンプ設計", "形状のタイプ:", types, 0, False)
         if not ok1: return
-        type_idx = types.index(selected_type)
+
+        lang = get_language()
+        trans_types = [translate_text(t, lang) for t in types]
+
+        if selected_type in types:
+            type_idx = types.index(selected_type)
+        elif selected_type in trans_types:
+            type_idx = trans_types.index(selected_type)
+        else:
+            type_idx = 0
 
         is_maru = type_idx in (0, 2)
-        is_simple = type_idx in (0, 1)
+        is_simple = type_idx in (0, 1, 4, 5)
 
         if is_maru:
             size, ok2 = QtWidgets.QInputDialog.getDouble(None, "寸法指定", "直径 (mm):", 15.0, 5.0, 50.0, 1)
+            if not ok2: return
+        elif type_idx == 4: # 小判印
+            size, ok2 = QtWidgets.QInputDialog.getDouble(None, "寸法指定", "長径 / 縦幅 (mm):", 12.0, 5.0, 50.0, 1)
             if not ok2: return
         else:
             size, ok2 = QtWidgets.QInputDialog.getDouble(None, "寸法指定", "一辺の幅 (mm):", 21.0, 5.0, 50.0, 1)
@@ -47,7 +70,14 @@ class Tool_Inkan:
             edge_items = ["丸めない (シャープ)", "丸める (なめらか)"]
             edge_sel, ok4 = QtWidgets.QInputDialog.getItem(None, "形状仕上げ", "天面（手で持つ側）の角処理:", edge_items, 0, False)
             if not ok4: return
-            fillet_top = (edge_items.index(edge_sel) == 1)
+
+            trans_edge_items = [translate_text(it, lang) for it in edge_items]
+            if edge_sel in edge_items:
+                fillet_top = (edge_items.index(edge_sel) == 1)
+            elif edge_sel in trans_edge_items:
+                fillet_top = (trans_edge_items.index(edge_sel) == 1)
+            else:
+                fillet_top = False
         else:
             length = 55.0
             fillet_top = False
@@ -109,7 +139,26 @@ class Tool_Inkan:
                 p_start = FreeCAD.Vector(-half_s, -half_s, 0)
                 base_shape = Part.makeBox(size, size, length, p_start)
                 label = f"Inkan_Kaku_{text_str}"
-            else:  # スタンプ
+            elif type_idx == 4:  # 小判印 (楕円型: 縦横比 1 : 0.7)
+                rx = size * 0.35
+                ry = size * 0.50
+                ellipse_geom = Part.Ellipse(FreeCAD.Vector(0, 0, 0), ry, rx)
+                wire = Part.Wire([ellipse_geom.toShape()])
+                face = Part.Face(wire)
+                base_shape = face.extrude(FreeCAD.Vector(0, 0, length))
+                label = f"Inkan_Koban_{text_str}"
+            elif type_idx == 5:  # 八角印 (開運の八角柱)
+                r_oct = size / 2.0
+                pts_oct = []
+                for k in range(8):
+                    ang = math.pi / 8.0 + k * math.pi / 4.0
+                    pts_oct.append(FreeCAD.Vector(r_oct * math.cos(ang), r_oct * math.sin(ang), 0))
+                pts_oct.append(pts_oct[0])
+                wire_oct = Part.makePolygon(pts_oct)
+                face_oct = Part.Face(wire_oct)
+                base_shape = face_oct.extrude(FreeCAD.Vector(0, 0, length))
+                label = f"Inkan_Hakkaku_{text_str}"
+            else:  # スタンプ各種
                 pts = [
                     FreeCAD.Vector(0, 0, 0),
                     FreeCAD.Vector(r_base, 0, 0),
@@ -152,7 +201,7 @@ class Tool_Inkan:
                 except Exception:
                     pass
 
-            if fillet_top and type_idx in (0, 1):
+            if fillet_top and type_idx in (0, 1, 4, 5):
                 edges_to_fillet = []
                 for e in base_shape.Edges:
                     if hasattr(e, "CenterOfMass") and abs(e.CenterOfMass.z - length) < 0.001:
@@ -167,7 +216,6 @@ class Tool_Inkan:
 
             bar.update(45, "2/3: 文字サイズを自動計測して3D最適化中...")
             try:
-                max_allowed_zone = size * 0.75
                 temp_size = 10.0
                 try:
                     shapestring_obj = Draft.makeShapeString(Text=text_str, FontFile=font_path, Size=temp_size)
@@ -178,13 +226,24 @@ class Tool_Inkan:
                         shapestring_obj = Draft.makeShapeString(String=text_str, FontFile=font_path, Size=temp_size)
                 
                 temp_bbox = shapestring_obj.Shape.BoundBox
-                temp_width = temp_bbox.XMax - temp_bbox.XMin
-                temp_height = temp_bbox.YMax - temp_bbox.YMin
+                temp_width = max(temp_bbox.XMax - temp_bbox.XMin, 0.1)
+                temp_height = max(temp_bbox.YMax - temp_bbox.YMin, 0.1)
                 
-                max_temp_dim = max(temp_width, temp_height)
-                if max_temp_dim <= 0: max_temp_dim = 1.0
-                
-                optimized_font_size = (max_allowed_zone / max_temp_dim) * temp_size
+                # --- 幾何学的に絶対食み出さない自動スケール計算 ---
+                if type_idx in (0, 2):  # 丸印・丸スタンプ (円形: 対角線を円内に収める)
+                    diag = math.sqrt(temp_width**2 + temp_height**2)
+                    scale = (size * 0.70) / diag
+                elif type_idx == 4:  # 小判印 (楕円型: 楕円方程式にコーナー座標をあてはめて逆算)
+                    a_safe = (size * 0.35) * 0.75
+                    b_safe = (size * 0.50) * 0.75
+                    scale = 1.0 / math.sqrt(((temp_width / 2.0) / a_safe)**2 + ((temp_height / 2.0) / b_safe)**2)
+                elif type_idx == 5:  # 八角印 (八角形: 対角線を八角形の内接円内に収める)
+                    diag = math.sqrt(temp_width**2 + temp_height**2)
+                    scale = (size * 0.65) / diag
+                else:  # 角印・角スタンプ (正方形)
+                    scale = min((size * 0.70) / temp_width, (size * 0.70) / temp_height)
+
+                optimized_font_size = temp_size * scale
                 
                 if hasattr(shapestring_obj, "Size"):
                     shapestring_obj.Size = optimized_font_size

@@ -7,6 +7,14 @@ from Core.QtCompat import QtWidgets, QtGui, QtCore
 import math
 import Core.Progress as Progress
 
+# 翻訳機能の安全読み込み
+try:
+    from Core.Controller import translate_text
+    from Core.Language import get_language
+except ImportError:
+    def translate_text(text, lang): return text
+    def get_language(): return "日本語"
+
 class Tool_Hoshi:
     def GetResources(self):
         current_dir = os.path.dirname(__file__)
@@ -28,7 +36,17 @@ class Tool_Hoshi:
         items = ["穴を設ける", "穴を設けない"]
         hole_choice, ok3 = QtWidgets.QInputDialog.getItem(None, "星設計", "紐通し穴の設定:", items, 0, False)
         if not ok3: return
-        has_hole = (items.index(hole_choice) == 0)
+        
+        # 日本語・英語（翻訳済み）双方に対応した安全な判定
+        lang = get_language()
+        trans_items = [translate_text(it, lang) for it in items]
+
+        if hole_choice in items:
+            has_hole = (items.index(hole_choice) == 0)
+        elif hole_choice in trans_items:
+            has_hole = (trans_items.index(hole_choice) == 0)
+        else:
+            has_hole = True
         
         r_hole = 0.8
 

@@ -7,6 +7,14 @@ from Core.QtCompat import QtWidgets, QtGui, QtCore
 import math
 import Core.Progress as Progress
 
+# 翻訳機能の安全読み込み
+try:
+    from Core.Controller import translate_text
+    from Core.Language import get_language
+except ImportError:
+    def translate_text(text, lang): return text
+    def get_language(): return "日本語"
+
 class Tool_Heart:
     def GetResources(self):
         current_dir = os.path.dirname(__file__)
@@ -29,12 +37,29 @@ class Tool_Heart:
         items = ["フラット (単純押し出し)", "ふっくら (ぷっくりさせる)"]
         item, ok3 = QtWidgets.QInputDialog.getItem(None, "形状選択", "ハートのタイプ:", items, 1, False)
         if not ok3: return
-        is_puffy = (items.index(item) == 1)
+
+        # 日本語・英語（翻訳済み）双方に対応した安全な判定
+        lang = get_language()
+        trans_items = [translate_text(it, lang) for it in items]
+
+        if item in items:
+            is_puffy = (items.index(item) == 1)
+        elif item in trans_items:
+            is_puffy = (trans_items.index(item) == 1)
+        else:
+            is_puffy = True
 
         hole_items = ["穴を設ける", "穴を設けない"]
         hole_choice, ok4 = QtWidgets.QInputDialog.getItem(None, "ハート設計", "紐通し穴の設定:", hole_items, 0, False)
         if not ok4: return
-        has_hole = (hole_items.index(hole_choice) == 0)
+
+        trans_hole_items = [translate_text(it, lang) for it in hole_items]
+        if hole_choice in hole_items:
+            has_hole = (hole_items.index(hole_choice) == 0)
+        elif hole_choice in trans_hole_items:
+            has_hole = (trans_hole_items.index(hole_choice) == 0)
+        else:
+            has_hole = True
         
         r_hole = 0.8
 
