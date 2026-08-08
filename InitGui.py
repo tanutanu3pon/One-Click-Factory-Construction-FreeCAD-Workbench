@@ -6,12 +6,15 @@ import inspect
 import FreeCAD
 import FreeCADGui
 
-# ハードコードを排除した安全なパス取得
-if '__file__' in globals() and __file__:
-    base_path = os.path.dirname(os.path.abspath(__file__))
-else:
-    current_file = inspect.getfile(inspect.currentframe())
-    base_path = os.path.dirname(os.path.abspath(current_file))
+# __file__ が存在しないFreeCAD起動環境でも確実にパスを取得する修正
+try:
+    if '__file__' in globals() and __file__:
+        base_path = os.path.dirname(os.path.abspath(__file__))
+    else:
+        current_file = inspect.getfile(inspect.currentframe())
+        base_path = os.path.dirname(os.path.abspath(current_file))
+except Exception:
+    base_path = os.path.dirname(os.path.abspath(inspect.getfile(lambda: None)))
 
 if base_path not in sys.path:
     sys.path.append(base_path)
@@ -21,25 +24,16 @@ if os.path.exists(icons_dir):
     FreeCADGui.addIconPath(icons_dir)
 
 try:
+    import Core.Language as Language
+    import Core.Dictionary as Dictionary
     import Core.Controller as Controller
+
+    # ワークベンチ登録前に言語選択ダイアログを表示・辞書ロードを完了させる
+    Language.prompt_language()
+    Dictionary.load_dictionary()
+
+    # 言語が確定した状態の辞書でワークベンチを登録
     Controller.register_workbench(base_path)
-    
-    # ---------------------------------------------------------
-    # 起動時の言語選択ダイアログ処理（フリーズ対策版）
-    # ---------------------------------------------------------
-    def show_language_dialog():
-        import Core.Language as Language
-        import Core.Dictionary as Dictionary
-        Language.prompt_language()    # 言語ダイアログを表示
-        Dictionary.load_dictionary()  # 選択された言語で辞書を再読み込み
-
-    try:
-        from PySide2 import QtCore
-    except ImportError:
-        from PySide6 import QtCore
-
-    # FreeCADのメイン画面の描画が完了するのを待つため、1000ミリ秒(1秒)後に実行
-    QtCore.QTimer.singleShot(1000, show_language_dialog)
 
 except Exception as e:
     import traceback
