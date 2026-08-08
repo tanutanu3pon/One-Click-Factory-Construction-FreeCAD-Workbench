@@ -12,38 +12,20 @@ def load_dictionary():
     TRANSLATION_DICT.clear()
 
     try:
-        # スクリプト自身の場所（Core/）を基準に、1階層上のワークベンチのルートディレクトリを取得
         if '__file__' in globals() and __file__:
             base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         else:
-            # __file__ が取得できない場合の安全なフォールバック
-            # inspect を使用して実行中の現在のファイルのパスを動的に取得する
             current_file = inspect.getfile(inspect.currentframe())
             base_dir = os.path.dirname(os.path.dirname(os.path.abspath(current_file)))
 
         current_lang = Language.get_language()
 
-        # 言語名から対応する辞書ファイル名を決定（文字化けを修正）
-        lang_file_map = {
-            "English": "dictionary_en.json",
-            "Deutsch": "dictionary_de.json",
-            "Francais": "dictionary_fr.json",
-            "中文": "dictionary_zh.json",
-            "Korean": "dictionary_ko.json", 
-            "Русский": "dictionary_ru.json",
-        }
+        # 日本語表示の場合は辞書読み込みをスキップ（高速化）
+        if current_lang == "日本語":
+            return
 
-        dict_file = "dictionary_en.json"
-        for key, fname in lang_file_map.items():
-            if key in current_lang:
-                dict_file = fname
-                break
-
-        json_path = os.path.join(base_dir, "translations", dict_file)
-
-        # 該当言語のファイルがなければ英語辞書にフォールバック
-        if not os.path.exists(json_path):
-            json_path = os.path.join(base_dir, "translations", "dictionary_en.json")
+        # 英語の場合は dictionary_en.json を読み込む
+        json_path = os.path.join(base_dir, "translations", "dictionary_en.json")
 
         if os.path.exists(json_path):
             with open(json_path, "r", encoding="utf-8") as f:
