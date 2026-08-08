@@ -1,10 +1,4 @@
-exec(r'''
-import os
-
-wb_dir = r"C:\Users\horis\AppData\Roaming\FreeCAD\v1-1\Mod\Ring"
-lang_py_path = os.path.join(wb_dir, "Core", "Language.py")
-
-new_language_py = """# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 # Core/Language.py
 from Core.QtCompat import QtWidgets
 import FreeCAD
@@ -12,61 +6,92 @@ import FreeCAD
 _CURRENT_LANG = None
 
 def get_language():
+    """起動時はダイアログを出さず、設定から言語を静かに読み込む"""
     global _CURRENT_LANG
     
     if _CURRENT_LANG is not None:
         return _CURRENT_LANG
 
-    # 対応言語リスト
+    # FreeCADのユーザーパラメータから前回の言語設定を読み込む
+    try:
+        param = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/General")
+        lang_code = param.GetString("Language", "Japanese")
+        
+        # FreeCADの内部言語コードとのマッピング
+        lang_map = {
+            "Japanese": "日本語",
+            "English": "English",
+            "German": "Deutsch (ドイツ語)",
+            "French": "Francais (フランス語)",
+            "Chinese Simplified": "中文 (中国語)",
+            "Korean": "??? (韓国語)",
+            "Russian": "Русский (ロシア語)"
+        }
+        _CURRENT_LANG = lang_map.get(lang_code, "日本語")
+    except Exception:
+        _CURRENT_LANG = "日本語"
+        
+    return _CURRENT_LANG
+
+
+def prompt_language():
+    """ワークベンチ起動時（アイコンクリック時）に呼ばれる、言語選択ダイアログ"""
+    global _CURRENT_LANG
+    
     languages = [
         "日本語", 
         "English", 
         "Deutsch (ドイツ語)", 
         "Francais (フランス語)", 
         "中文 (中国語)", 
-        "??語 (韓国語)", 
+        "??? (韓国語)", 
         "Русский (ロシア語)"
     ]
+    
+    current = get_language()
+    default_index = languages.index(current) if current in languages else 0
     
     try:
         lang, ok = QtWidgets.QInputDialog.getItem(
             None, 
             "Language / 言語設定", 
-            "Choose language / 言語を選択してください:", 
+            "開発モード: 言語を選択してください\n(Choose language):", 
             languages, 
-            0, False
+            default_index, False
         )
         if ok and lang:
+            # ★改善ポイント: 前回と同じ言語なら重い保存処理をスキップして即終了
+            if lang == current:
+                return _CURRENT_LANG
             _CURRENT_LANG = lang
         else:
-            _CURRENT_LANG = "日本語"
+            return _CURRENT_LANG # キャンセル時はそのまま
     except Exception:
-        _CURRENT_LANG = "日本語"
+        pass
         
+    # --- ここから下はFreeCAD全体を更新するため「重い処理」 ---
     try:
         param = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/General")
+        target_fc_lang = "Japanese"
+        
         if "English" in _CURRENT_LANG:
-            param.SetString("Language", "English")
+            target_fc_lang = "English"
         elif "Deutsch" in _CURRENT_LANG:
-            param.SetString("Language", "German")
+            target_fc_lang = "German"
         elif "Francais" in _CURRENT_LANG:
-            param.SetString("Language", "French")
+            target_fc_lang = "French"
         elif "中文" in _CURRENT_LANG:
-            param.SetString("Language", "Chinese Simplified")
-        elif "??" in _CURRENT_LANG:
-            param.SetString("Language", "Korean")
+            target_fc_lang = "Chinese Simplified"
+        elif "???" in _CURRENT_LANG:
+            target_fc_lang = "Korean"
         elif "Русский" in _CURRENT_LANG:
-            param.SetString("Language", "Russian")
-        else:
-            param.SetString("Language", "Japanese")
+            target_fc_lang = "Russian"
+            
+        # ★改善ポイント: FreeCAD本体の設定と違う場合のみ書き換える
+        if param.GetString("Language", "") != target_fc_lang:
+            param.SetString("Language", target_fc_lang)
+            
     except Exception:
         pass
             
     return _CURRENT_LANG
-"""
-
-with open(lang_py_path, "w", encoding="utf-8") as f:
-    f.write(new_language_py)
-
-print("[設定完了] Core/Language.py を多言語（7言語）対応に更新しました！")
-''')

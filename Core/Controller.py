@@ -3,39 +3,45 @@
 import os
 import sys
 import re
+import importlib
 import FreeCAD
 import FreeCADGui
 
-try:
-    from Core.Dictionary import TRANSLATION_DICT
-except ImportError:
-    TRANSLATION_DICT = {}
-
 def translate_text(text, lang):
-    if lang != "English" or not text:
+    import Core.Dictionary as Dictionary
+    # 日本語（デフォルト）または空文字の場合はそのまま返す
+    if lang == "日本語" or not text:
         return text
-    if text in TRANSLATION_DICT:
-        return TRANSLATION_DICT[text]
+    
+    # 常に最新の辞書を参照する
+    trans_dict = Dictionary.TRANSLATION_DICT
+
+    if text in trans_dict:
+        return trans_dict[text]
+    
     match = re.match(r"^(<[^>]+>)*(.*?)(</[^>]+>|[:：\s])*$", text)
     if match:
         prefix = match.group(1) or ""
         core_text = match.group(2) or ""
         suffix = match.group(3) or ""
-        if core_text in TRANSLATION_DICT:
-            return prefix + TRANSLATION_DICT[core_text] + suffix
+        if core_text in trans_dict:
+            return prefix + trans_dict[core_text] + suffix
+            
     new_text = text
-    for jp in sorted(TRANSLATION_DICT.keys(), key=len, reverse=True):
+    for jp in sorted(trans_dict.keys(), key=len, reverse=True):
         if jp in new_text:
-            new_text = new_text.replace(jp, TRANSLATION_DICT[jp])
+            new_text = new_text.replace(jp, trans_dict[jp])
     return new_text
 
+
 def auto_translate_widget(widget, lang):
-    if lang != "English":
+    if lang == "日本語":
         return
     try:
         from PySide2 import QtWidgets
     except ImportError:
         from PySide6 import QtWidgets
+        
     if hasattr(widget, "windowTitle") and widget.windowTitle():
         widget.setWindowTitle(translate_text(widget.windowTitle(), lang))
     for form in widget.findChildren(QtWidgets.QFormLayout):
@@ -62,15 +68,15 @@ def auto_translate_widget(widget, lang):
 
 
 def register_workbench(base_path):
-    import Core.Language as Language
-    current_lang = Language.get_language()
-
     original_addCommand = FreeCADGui.addCommand
 
     def custom_addCommand(command_name, command_obj):
         if hasattr(command_obj, 'GetResources'):
             orig_get_resources = command_obj.GetResources
             def wrapped_get_resources(*args, **kwargs):
+                import Core.Language as Language
+                # UI登録時はその時点の言語を取得
+                current_lang = Language.get_language()
                 res = orig_get_resources(*args, **kwargs)
                 if 'MenuText' in res:
                     res['MenuText'] = translate_text(res['MenuText'] if 'の作成' in res['MenuText'] else f"{res['MenuText']}の作成", current_lang)
@@ -82,6 +88,10 @@ def register_workbench(base_path):
         if hasattr(command_obj, 'Activated'):
             orig_activated = command_obj.Activated
             def wrapped_activated(*args, **kwargs):
+                import Core.Language as Language
+                # ★ツール実行時に最新の言語設定を動的に取得する
+                current_lang = Language.get_language()
+                
                 try:
                     from PySide2 import QtWidgets
                 except ImportError:
@@ -104,6 +114,7 @@ def register_workbench(base_path):
                 orig_msg_information = QtWidgets.QMessageBox.information
                 orig_msg_question = QtWidgets.QMessageBox.question
 
+                # --- 翻訳パッチ関数（current_lang を使用） ---
                 def patched_dialog_exec(dialog_self):
                     auto_translate_widget(dialog_self, current_lang)
                     return orig_dialog_exec(dialog_self) if orig_dialog_exec else orig_dialog_exec_new(dialog_self)
@@ -132,7 +143,7 @@ def register_workbench(base_path):
                     t_label = translate_text(label, current_lang)
                     t_items = [translate_text(item, current_lang) for item in items]
                     res_text, ok = orig_input_getItem(parent, t_title, t_label, t_items, *args, **kwargs)
-                    if ok and current_lang == "English":
+                    if ok and current_lang != "日本語":
                         reverse_dict = {translate_text(item, current_lang): item for item in items}
                         if res_text in reverse_dict:
                             res_text = reverse_dict[res_text]
@@ -170,29 +181,24 @@ def register_workbench(base_path):
                 QtWidgets.QMessageBox.information = patched_msg_information
                 QtWidgets.QMessageBox.question = patched_msg_question
                 
-                # ★修正ポイント：大外でエラーを監視し、全自動でフリーズを解除する
                 try:
                     orig_activated(*args, **kwargs)
                 except Exception as e:
                     import traceback
                     FreeCAD.Console.PrintError(traceback.format_exc())
                     
-                    # 1. 進行中のトランザクション（Undo用履歴）があれば強制破棄（ゴミを残さない）
                     doc = FreeCAD.activeDocument()
                     if doc and hasattr(doc, 'hasPendingTransaction') and doc.hasPendingTransaction():
                         doc.abortTransaction()
                     
-                    # 2. 画面フリーズ（UpdateEnabled(False)のまま停止すること）の強制解除
                     main_win = FreeCADGui.getMainWindow()
                     if main_win:
                         main_win.setUpdatesEnabled(True)
                         
-                    # 3. 画面に残りっぱなしのプログレスバーを強制的に閉じる
                     for widget in QtWidgets.QApplication.topLevelWidgets():
                         if isinstance(widget, QtWidgets.QProgressDialog):
                             widget.close()
                             
-                    # 4. ユーザーにエラーを通知
                     QtWidgets.QMessageBox.critical(None, "ツール実行エラー", f"処理中に予期せぬエラーが発生しました。\n\n詳細:\n{str(e)}")
                     
                 finally:
@@ -216,6 +222,7 @@ def register_workbench(base_path):
             command_obj.Activated = wrapped_activated
 
         original_addCommand(command_name, command_obj)
+
 
     gui_path = base_path.replace('\\', '/')
     icons_dir = os.path.join(gui_path, "icons").replace('\\', '/')
@@ -268,7 +275,7 @@ def register_workbench(base_path):
             for tool in tools_config:
                 module_name = f"Tool.{tool['module']}"
                 try:
-                    exec(f"import {module_name}")
+                    importlib.import_module(module_name)
                     command_list.append(tool['id'])
                 except (ImportError, ModuleNotFoundError):
                     continue
@@ -310,7 +317,7 @@ def register_workbench(base_path):
             for tool in tools_config:
                 module_name = f"Tool.{tool['module']}"
                 try:
-                    exec(f"import {module_name}")
+                    importlib.import_module(module_name)
                     command_list.append(tool['id'])
                 except (ImportError, ModuleNotFoundError):
                     continue

@@ -1,13 +1,8 @@
-exec(r'''
-import os
-
-wb_dir = r"C:\Users\horis\AppData\Roaming\FreeCAD\v1-1\Mod\Ring"
-dict_py_path = os.path.join(wb_dir, "Core", "Dictionary.py")
-
-new_dictionary_py = """# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 # Core/Dictionary.py
 import os
 import json
+import inspect
 import Core.Language as Language
 
 TRANSLATION_DICT = {}
@@ -17,11 +12,14 @@ def load_dictionary():
     TRANSLATION_DICT.clear()
 
     try:
-        if '__file__' in globals():
+        # スクリプト自身の場所（Core/）を基準に、1階層上のワークベンチのルートディレクトリを取得
+        if '__file__' in globals() and __file__:
             base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         else:
-            import FreeCAD
-            base_dir = os.path.join(FreeCAD.getUserAppDataDir(), "v1-1", "Mod", "Ring")
+            # __file__ が取得できない場合の安全なフォールバック
+            # inspect を使用して実行中の現在のファイルのパスを動的に取得する
+            current_file = inspect.getfile(inspect.currentframe())
+            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(current_file)))
 
         current_lang = Language.get_language()
 
@@ -31,7 +29,7 @@ def load_dictionary():
             "Deutsch": "dictionary_de.json",
             "Francais": "dictionary_fr.json",
             "中文": "dictionary_zh.json",
-            "??": "dictionary_ko.json",
+            "??": "dictionary_ko.json",  # ※韓国語の文字化け部分（"??"）は元のコードに合わせています
             "Русский": "dictionary_ru.json",
         }
 
@@ -54,10 +52,3 @@ def load_dictionary():
         print(f"翻訳辞書の読み込み失敗: {str(e)}")
 
 load_dictionary()
-"""
-
-with open(dict_py_path, "w", encoding="utf-8") as f:
-    f.write(new_dictionary_py)
-
-print("[設定完了] Core/Dictionary.py を多言語動的ロード仕様に更新しました！")
-''')
