@@ -1,22 +1,32 @@
-# -*- coding: utf-8 -*-
-# Core/Language.py
-try:
-    from PySide2 import QtWidgets, QtCore
-except ImportError:
-    from PySide6 import QtWidgets, QtCore
+exec(r'''
+import os
 
+wb_dir = r"C:\Users\horis\AppData\Roaming\FreeCAD\v1-1\Mod\Ring"
+lang_py_path = os.path.join(wb_dir, "Core", "Language.py")
+
+new_language_py = """# -*- coding: utf-8 -*-
+# Core/Language.py
+from Core.QtCompat import QtWidgets
 import FreeCAD
 
 _CURRENT_LANG = None
 
 def get_language():
-    """ 起動時にポップアップを出し、FreeCAD本体の言語設定も同時に書き換えます """
     global _CURRENT_LANG
     
     if _CURRENT_LANG is not None:
         return _CURRENT_LANG
 
-    languages = ["日本語", "English"]
+    # 対応言語リスト
+    languages = [
+        "日本語", 
+        "English", 
+        "Deutsch (ドイツ語)", 
+        "Francais (フランス語)", 
+        "中文 (中国語)", 
+        "??語 (韓国語)", 
+        "Русский (ロシア語)"
+    ]
     
     try:
         lang, ok = QtWidgets.QInputDialog.getItem(
@@ -35,11 +45,28 @@ def get_language():
         
     try:
         param = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/General")
-        if _CURRENT_LANG == "English":
+        if "English" in _CURRENT_LANG:
             param.SetString("Language", "English")
+        elif "Deutsch" in _CURRENT_LANG:
+            param.SetString("Language", "German")
+        elif "Francais" in _CURRENT_LANG:
+            param.SetString("Language", "French")
+        elif "中文" in _CURRENT_LANG:
+            param.SetString("Language", "Chinese Simplified")
+        elif "??" in _CURRENT_LANG:
+            param.SetString("Language", "Korean")
+        elif "Русский" in _CURRENT_LANG:
+            param.SetString("Language", "Russian")
         else:
             param.SetString("Language", "Japanese")
     except Exception:
         pass
             
     return _CURRENT_LANG
+"""
+
+with open(lang_py_path, "w", encoding="utf-8") as f:
+    f.write(new_language_py)
+
+print("[設定完了] Core/Language.py を多言語（7言語）対応に更新しました！")
+''')
