@@ -6,7 +6,7 @@ import inspect
 import FreeCAD
 import FreeCADGui
 
-# __file__ が存在しないFreeCAD起動環境でも確実にパスを取得する修正
+# __file__ が存在しないFreeCAD起動環境でも確実にパスを取得
 try:
     if '__file__' in globals() and __file__:
         base_path = os.path.dirname(os.path.abspath(__file__))
@@ -16,6 +16,7 @@ try:
 except Exception:
     base_path = os.path.dirname(os.path.abspath(inspect.getfile(lambda: None)))
 
+# 【修正】0番目(最優先)への強制追加を避け、末尾に追加(append)してFreeCAD全体の破壊を防ぎます
 if base_path not in sys.path:
     sys.path.append(base_path)
 
@@ -24,15 +25,16 @@ if os.path.exists(icons_dir):
     FreeCADGui.addIconPath(icons_dir)
 
 try:
+    # エラーが出ない元のインポート方式（絶対インポート）に戻します
     import Core.Language as Language
     import Core.Dictionary as Dictionary
     import Core.Controller as Controller
 
-    # ワークベンチ登録前に言語選択ダイアログを表示・辞書ロードを完了させる
-    Language.prompt_language()
+    # 起動時のダイアログは出さず、設定から言語をサイレントに読み込む
+    Language.init_language()
     Dictionary.load_dictionary()
 
-    # 言語が確定した状態の辞書でワークベンチを登録
+    # ワークベンチを登録
     Controller.register_workbench(base_path)
 
 except Exception as e:
