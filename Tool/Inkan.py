@@ -6,7 +6,7 @@ import FreeCADGui
 import Part
 import Draft
 
-# 【修正】絶対インポートで安全にCoreモジュールを読み込む
+# 絶対インポートで安全にCoreモジュールを読み込む
 from Core.QtCompat import QtWidgets, QtGui, QtCore
 import Core.Progress as Progress
 from Core.Controller import TranslatedInputDialog, translate_text
@@ -21,13 +21,12 @@ class Tool_Inkan:
         return {
             'Pixmap'  : icon_path,
             'MenuText': "印鑑・本格スタンプの作成",
-            'ToolTip' : "土台のサイズに合わせて、文字が絶対にはみ出さないよう自動調整して彫り込みします（進捗窓付き）"
+            'ToolTip' : "文字や画像を自動スケールして彫り込み/凸成形します（進捗窓付き）"
         }
 
     def Activated(self):
         lang = get_language()
 
-        # 【追加】新種類「六角印 (亀甲の六角柱)」を追加した7種類の一覧
         types = [
             "丸印 (シンプルな円柱)", 
             "角印 (シンプルな四角柱)",
@@ -38,7 +37,6 @@ class Tool_Inkan:
             "六角印 (亀甲の六角柱)"
         ]
         
-        # 【修正】QtWidgets.QInputDialog から TranslatedInputDialog へ差し替え
         selected_type, ok1 = TranslatedInputDialog.getItem(None, "印鑑・スタンプ設計", "形状のタイプ:", types, 0, False)
         if not ok1: return
 
@@ -83,13 +81,57 @@ class Tool_Inkan:
             length = 55.0
             fillet_top = False
 
-        text_str, ok5 = TranslatedInputDialog.getText(None, "文字彫刻設定", "彫り込む文字を入力（例: 印, 田中）:")
-        if not ok5 or not text_str: return
+        # 入力方法の選択（文字 or 画像）
+        input_methods = ["文字を入力する", "画像ファイル (JPG/PNG) をトレース"]
+        input_sel, ok_in = TranslatedInputDialog.getItem(None, "デザイン指定", "印面のデザインソース:", input_methods, 0, False)
+        if not ok_in: return
 
-        text_depth, ok6 = TranslatedInputDialog.getDouble(None, "文字彫刻設定", "彫り込みの深さ (mm):", 1.0, 0.1, 5.0, 2)
+        trans_input_methods = [translate_text(it, lang) for it in input_methods]
+        if input_sel in input_methods:
+            is_image_mode = (input_methods.index(input_sel) == 1)
+        elif input_sel in trans_input_methods:
+            is_image_mode = (trans_input_methods.index(input_sel) == 1)
+        else:
+            is_image_mode = False
+
+        input_mode = "image" if is_image_mode else "text"
+        input_data = ""
+
+        if input_mode == "text":
+            text_str, ok5 = TranslatedInputDialog.getText(None, "文字彫刻設定", "彫り込む文字を入力（例: 印, 田中）:")
+            if not ok5 or not text_str: return
+            input_data = text_str
+        else:
+            try:
+                import cv2
+                import numpy as np
+            except ImportError:
+                QtWidgets.QMessageBox.critical(None, translate_text("ライブラリ不足", lang), 
+                    translate_text("画像トレースには OpenCV が必要です。\nFreeCADのPython環境に 'opencv-python' と 'numpy' をインストールしてください。", lang))
+                return
+
+            img_path, _ = QtWidgets.QFileDialog.getOpenFileName(None, translate_text("画像を選択", lang), "", "Images (*.png *.jpg *.jpeg *.bmp)")
+            if not img_path: return
+            input_data = img_path
+
+        # 文字/画像の加工スタイル選択（凹 / 凸）
+        carve_type_items = ["凹 (底に彫り込む)", "凸 (底から浮かせる)"]
+        carve_type_sel, ok_type = TranslatedInputDialog.getItem(None, "文字/画像加工設定", "加工スタイル:", carve_type_items, 0, False)
+        if not ok_type: return
+
+        trans_carve_items = [translate_text(it, lang) for it in carve_type_items]
+        if carve_type_sel in carve_type_items:
+            is_emboss = (carve_type_items.index(carve_type_sel) == 1)
+        elif carve_type_sel in trans_carve_items:
+            is_emboss = (trans_carve_items.index(carve_type_sel) == 1)
+        else:
+            is_emboss = False
+
+        depth_label = "凸の高さ (mm):" if is_emboss else "彫り込みの深さ (mm):"
+        text_depth, ok6 = TranslatedInputDialog.getDouble(None, "深さ設定", depth_label, 1.0, 0.1, 5.0, 2)
         if not ok6: return
 
-        self.create_and_carve_inkan(type_idx, size, length, fillet_top, text_str, text_depth, lang)
+        self.create_and_carve_inkan(type_idx, size, length, fillet_top, input_mode, input_data, text_depth, is_emboss, lang)
 
     def _get_system_font(self):
         current_dir = os.path.dirname(__file__)
@@ -115,16 +157,80 @@ class Tool_Inkan:
                 return path
         return ""
 
-    def create_and_carve_inkan(self, type_idx, size, length, fillet_top, text_str, text_depth, lang):
+    def _create_solid_from_image(self, img_path):
+        """ OpenCVを用いて最外郭(アウトライン)のみを取得し、中身の詰まった塗りつぶしFaceを生成する """
+        import cv2
+        import numpy as np
+
+        try:
+            with open(img_path, "rb") as f:
+                img_array = np.asarray(bytearray(f.read()), dtype=np.uint8)
+            img = cv2.imdecode(img_array, cv2.IMREAD_UNCHANGED)
+        except Exception as e:
+            raise ValueError(f"画像の読み込みに失敗しました: {e}")
+
+        if img is None:
+            raise ValueError("画像のデコードに失敗しました。ファイル形式を確認してください。")
+
+        # 二値化処理
+        if img.ndim == 3 and img.shape[2] == 4 and np.min(img[:, :, 3]) < 255:
+            thresh = (img[:, :, 3] > 10).astype(np.uint8) * 255
+        else:
+            if img.ndim == 3:
+                gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            else:
+                gray = img
+            thresh = (gray < 190).astype(np.uint8) * 255
+
+        # ノイズ除去と輪郭線の結合補正
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+        thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
+
+        # RETR_EXTERNAL で「最外郭輪郭（一番外側のアウトライン）」のみ抽出（中身の模様や穴は無視）
+        contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        faces = []
+        if contours:
+            for contour in contours:
+                # 小さいゴミノイズを除外
+                if cv2.contourArea(contour) < 20:
+                    continue
+
+                # 輪郭の平滑化
+                epsilon = 0.003 * cv2.arcLength(contour, True)
+                approx = cv2.approxPolyDP(contour, epsilon, True)
+                
+                if len(approx) < 3: continue
+                
+                pts = [FreeCAD.Vector(float(p[0][0]), -float(p[0][1]), 0) for p in approx]
+                pts.append(pts[0])
+                
+                try:
+                    wire = Part.makePolygon(pts)
+                    face = Part.Face(wire)  # 穴を作らず単一の面にする（中身を完全に塗りつぶす）
+                    faces.append(face)
+                except Exception:
+                    pass
+
+        if not faces:
+            raise ValueError("画像から有効なシルエットを検出できませんでした。白地に黒描画の画像、または透過PNGをお試しください。")
+
+        return Part.makeCompound(faces)
+
+    def create_and_carve_inkan(self, type_idx, size, length, fillet_top, input_mode, input_data, text_depth, is_emboss, lang):
         with Progress.ProgressManager() as bar:
-            bar.start(title=translate_text("印鑑・スタンプ生成", lang), initial_text=translate_text("OSのフォント環境をスキャン中...", lang))
+            bar.start(title=translate_text("印鑑・スタンプ生成", lang), initial_text=translate_text("処理を準備中...", lang))
 
             doc = FreeCAD.activeDocument() or FreeCAD.newDocument()
-            font_path = self._get_system_font()
 
-            if not font_path:
-                QtWidgets.QMessageBox.critical(None, translate_text("エラー", lang), translate_text("利用可能なフォントファイルが見つかりません。", lang))
-                return
+            if input_mode == "text":
+                font_path = self._get_system_font()
+                if not font_path:
+                    QtWidgets.QMessageBox.critical(None, translate_text("エラー", lang), translate_text("利用可能なフォントファイルが見つかりません。", lang))
+                    return
+                label_suffix = input_data
+            else:
+                label_suffix = "Image"
 
             bar.update(15, translate_text("1/3: 土台ソリッドを構築中...", lang))
             
@@ -134,21 +240,21 @@ class Tool_Inkan:
 
             if type_idx == 0:  # 丸印
                 base_shape = Part.makeCylinder(r_base, length)
-                label = f"Inkan_Maru_{text_str}"
+                label = f"Inkan_Maru_{label_suffix}"
             elif type_idx == 1:  # 角印
                 half_s = size / 2.0
                 p_start = FreeCAD.Vector(-half_s, -half_s, 0)
                 base_shape = Part.makeBox(size, size, length, p_start)
-                label = f"Inkan_Kaku_{text_str}"
-            elif type_idx == 4:  # 小判印 (楕円型: 縦横比 1 : 0.7)
+                label = f"Inkan_Kaku_{label_suffix}"
+            elif type_idx == 4:  # 小判印
                 rx = size * 0.35
                 ry = size * 0.50
                 ellipse_geom = Part.Ellipse(FreeCAD.Vector(0, 0, 0), ry, rx)
                 wire = Part.Wire([ellipse_geom.toShape()])
                 face = Part.Face(wire)
                 base_shape = face.extrude(FreeCAD.Vector(0, 0, length))
-                label = f"Inkan_Koban_{text_str}"
-            elif type_idx == 5:  # 八角印 (開運の八角柱)
+                label = f"Inkan_Koban_{label_suffix}"
+            elif type_idx == 5:  # 八角印
                 r_oct = size / 2.0
                 pts_oct = []
                 for k in range(8):
@@ -158,8 +264,8 @@ class Tool_Inkan:
                 wire_oct = Part.makePolygon(pts_oct)
                 face_oct = Part.Face(wire_oct)
                 base_shape = face_oct.extrude(FreeCAD.Vector(0, 0, length))
-                label = f"Inkan_Hakkaku_{text_str}"
-            elif type_idx == 6:  # 【新規追加】六角印 (亀甲の六角柱)
+                label = f"Inkan_Hakkaku_{label_suffix}"
+            elif type_idx == 6:  # 六角印
                 r_hex = size / 2.0
                 pts_hex = []
                 for k in range(6):
@@ -169,7 +275,7 @@ class Tool_Inkan:
                 wire_hex = Part.makePolygon(pts_hex)
                 face_hex = Part.Face(wire_hex)
                 base_shape = face_hex.extrude(FreeCAD.Vector(0, 0, length))
-                label = f"Inkan_Rokkaku_{text_str}"
+                label = f"Inkan_Rokkaku_{label_suffix}"
             else:  # スタンプ各種
                 pts = [
                     FreeCAD.Vector(0, 0, 0),
@@ -201,10 +307,10 @@ class Tool_Inkan:
                     cutter_cyl = Part.makeCylinder(r_base + 2.0, h_base)
                     upper_handle = handle_shape.cut(cutter_cyl)
                     base_shape = box_base.fuse(upper_handle)
-                    label = f"Stamp_Kaku_{text_str}"
+                    label = f"Stamp_Kaku_{label_suffix}"
                 else:  # 丸スタンプ
                     base_shape = handle_shape
-                    label = f"Stamp_Maru_{text_str}"
+                    label = f"Stamp_Maru_{label_suffix}"
 
                 try:
                     marker = Part.makeSphere(size * 0.05)
@@ -226,22 +332,27 @@ class Tool_Inkan:
 
             base_shape = base_shape.removeSplitter()
 
-            bar.update(45, translate_text("2/3: 文字サイズを自動計測して3D最適化中...", lang))
+            bar.update(45, translate_text("2/3: デザインのサイズを自動計測して3D最適化中...", lang))
             try:
-                temp_size = 10.0
-                try:
-                    shapestring_obj = Draft.makeShapeString(Text=text_str, FontFile=font_path, Size=temp_size)
-                except TypeError:
+                if input_mode == "text":
+                    temp_size = 10.0
                     try:
-                        shapestring_obj = Draft.makeShapeString(string=text_str, fontFile=font_path, size=temp_size)
+                        shapestring_obj = Draft.makeShapeString(Text=input_data, FontFile=font_path, Size=temp_size)
                     except TypeError:
-                        shapestring_obj = Draft.makeShapeString(String=text_str, FontFile=font_path, Size=temp_size)
-                
-                temp_bbox = shapestring_obj.Shape.BoundBox
+                        try:
+                            shapestring_obj = Draft.makeShapeString(string=input_data, fontFile=font_path, size=temp_size)
+                        except TypeError:
+                            shapestring_obj = Draft.makeShapeString(String=input_data, FontFile=font_path, Size=temp_size)
+                    
+                    temp_bbox = shapestring_obj.Shape.BoundBox
+                else:
+                    comp_shape = self._create_solid_from_image(input_data)
+                    temp_bbox = comp_shape.BoundBox
+
                 temp_width = max(temp_bbox.XMax - temp_bbox.XMin, 0.1)
                 temp_height = max(temp_bbox.YMax - temp_bbox.YMin, 0.1)
                 
-                # --- 幾何学的に絶対食み出さない自動スケール計算 ---
+                # 自動スケール計算
                 if type_idx in (0, 2):  # 丸印・丸スタンプ
                     diag = math.sqrt(temp_width**2 + temp_height**2)
                     scale = (size * 0.70) / diag
@@ -255,44 +366,55 @@ class Tool_Inkan:
                 else:  # 角印・角スタンプ
                     scale = min((size * 0.70) / temp_width, (size * 0.70) / temp_height)
 
-                optimized_font_size = temp_size * scale
+                bar.update(60, translate_text("デザインを立体ソリッド化中...", lang))
+                extra_depth = text_depth + (0.1 if is_emboss else 0.2)
                 
-                if hasattr(shapestring_obj, "Size"):
-                    shapestring_obj.Size = optimized_font_size
-                elif hasattr(shapestring_obj, "size"):
-                    shapestring_obj.size = optimized_font_size
+                if input_mode == "text":
+                    optimized_font_size = temp_size * scale
+                    if hasattr(shapestring_obj, "Size"): shapestring_obj.Size = optimized_font_size
+                    elif hasattr(shapestring_obj, "size"): shapestring_obj.size = optimized_font_size
+                    doc.recompute()
                     
-                doc.recompute()
+                    design_solid = shapestring_obj.Shape.extrude(FreeCAD.Vector(0, 0, -extra_depth))
+                    doc.removeObject(shapestring_obj.Name)
+                else:
+                    mat = FreeCAD.Matrix()
+                    mat.scale(scale, scale, 1.0)
+                    scaled_comp = comp_shape.transformGeometry(mat)
+                    design_solid = scaled_comp.extrude(FreeCAD.Vector(0, 0, -extra_depth))
                 
-                bar.update(60, translate_text("立体文字（彫刻用カッター）をソリッド化中...", lang))
-                extra_depth = text_depth + 0.2
-                text_solid = shapestring_obj.Shape.extrude(FreeCAD.Vector(0, 0, -extra_depth))
-                
-                if hasattr(text_solid, "ShapeType") and text_solid.ShapeType != "Solid":
-                    try: text_solid = Part.makeSolid(text_solid)
+                if hasattr(design_solid, "ShapeType") and design_solid.ShapeType != "Solid":
+                    try: design_solid = Part.makeSolid(design_solid)
                     except Exception: pass
                 
-                text_bbox = text_solid.BoundBox
-                text_center_x = (text_bbox.XMax + text_bbox.XMin) / 2.0
-                text_center_y = (text_bbox.YMax + text_bbox.YMin) / 2.0
+                design_bbox = design_solid.BoundBox
+                design_center_x = (design_bbox.XMax + design_bbox.XMin) / 2.0
+                design_center_y = (design_bbox.YMax + design_bbox.YMin) / 2.0
                 
-                text_solid.translate(FreeCAD.Vector(-text_center_x, -text_center_y, 0.1))
-                doc.removeObject(shapestring_obj.Name)
+                design_solid.translate(FreeCAD.Vector(-design_center_x, -design_center_y, 0.1))
 
             except Exception as e:
-                err_title = "Text Generation Error" if lang == "English" else "文字生成エラー"
-                err_msg = f"Text 3D modeling failed.\nDetails: {str(e)}" if lang == "English" else f"文字の立体化に失敗しました。\n詳細: {str(e)}"
+                err_title = "Design Generation Error" if lang == "English" else "デザイン生成エラー"
+                err_msg = f"3D modeling failed.\nDetails: {str(e)}" if lang == "English" else f"デザインの立体化に失敗しました。\n詳細: {str(e)}"
                 QtWidgets.QMessageBox.warning(None, err_title, err_msg)
                 return
 
-            bar.update(80, translate_text("3/3: 土台から文字をブーリアン減算(彫刻)中...", lang))
+            if is_emboss:
+                bar.update(80, translate_text("3/3: 土台にデザインをブーリアン結合(凸)中...", lang))
+            else:
+                bar.update(80, translate_text("3/3: 土台からデザインをブーリアン減算(凹)中...", lang))
+
             try:
                 base_shape = Part.Solid(base_shape)
-                final_inkan_shape = base_shape.cut(text_solid)
+                if is_emboss:
+                    final_inkan_shape = base_shape.fuse(design_solid)
+                else:
+                    final_inkan_shape = base_shape.cut(design_solid)
+
                 final_inkan_shape = final_inkan_shape.removeSplitter()
             except Exception as e:
-                err_title = "Engraving Error" if lang == "English" else "彫刻エラー"
-                err_msg = f"Boolean subtraction failed.\nDetails: {str(e)}" if lang == "English" else f"ブーリアン減算に失敗しました。\n詳細: {str(e)}"
+                err_title = "Processing Error" if lang == "English" else "加工エラー"
+                err_msg = f"Boolean operation failed.\nDetails: {str(e)}" if lang == "English" else f"ブーリアン演算に失敗しました。\n詳細: {str(e)}"
                 QtWidgets.QMessageBox.warning(None, err_title, err_msg)
                 return
 
