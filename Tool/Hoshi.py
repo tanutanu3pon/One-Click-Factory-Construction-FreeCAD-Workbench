@@ -30,7 +30,7 @@ class Tool_Hoshi:
         t, ok2 = TranslatedInputDialog.getDouble(None, "星設計", "全体の厚み (mm):", 4.0, 1.0, 30.0, 1)
         if not ok2: return
 
-        # 【追加】星のスタイル選択（シャープ / ふっくら）
+        # 1. 星のスタイル選択（シャープ / ふっくら）
         style_items = ["シャープ (標準)", "ふっくら (ぷっくり丸型)"]
         style_choice, ok_style = TranslatedInputDialog.getItem(None, "星設計", "星のスタイル:", style_items, 0, False)
         if not ok_style: return
@@ -43,24 +43,27 @@ class Tool_Hoshi:
         else:
             is_puffy = False
 
-        hole_items = ["穴を設ける", "穴を設けない"]
-        hole_choice, ok3 = TranslatedInputDialog.getItem(None, "星設計", "紐通し穴の設定:", hole_items, 0, False)
-        if not ok3: return
-        
-        trans_hole_items = [translate_text(it, lang) for it in hole_items]
-        if hole_choice in hole_items:
-            has_hole = (hole_items.index(hole_choice) == 0)
-        elif hole_choice in trans_hole_items:
-            has_hole = (trans_hole_items.index(hole_choice) == 0)
-        else:
-            has_hole = True
-        
+        has_hole = False
         r_hole = 0.8
 
-        if has_hole:
-            max_hole_r = max(0.5, r * 0.15)
-            r_hole, ok4 = TranslatedInputDialog.getDouble(None, "星設計", "穴の半径 (mm):", 0.8, 0.2, max_hole_r, 2)
-            if not ok4: return
+        # 2. 穴の設定（「ふっくら」の場合はダイアログを出さず穴なし固定）
+        if not is_puffy:
+            hole_items = ["穴を設ける", "穴を設けない"]
+            hole_choice, ok3 = TranslatedInputDialog.getItem(None, "星設計", "紐通し穴の設定:", hole_items, 0, False)
+            if not ok3: return
+            
+            trans_hole_items = [translate_text(it, lang) for it in hole_items]
+            if hole_choice in hole_items:
+                has_hole = (hole_items.index(hole_choice) == 0)
+            elif hole_choice in trans_hole_items:
+                has_hole = (trans_hole_items.index(hole_choice) == 0)
+            else:
+                has_hole = True
+
+            if has_hole:
+                max_hole_r = max(0.5, r * 0.15)
+                r_hole, ok4 = TranslatedInputDialog.getDouble(None, "星設計", "穴の半径 (mm):", 0.8, 0.2, max_hole_r, 2)
+                if not ok4: return
 
         self.create_hoshi(r, t, is_puffy, has_hole, r_hole, lang)
 
@@ -101,7 +104,7 @@ class Tool_Hoshi:
             bar.update(70, translate_text("面を縫い合わせてソリッド立体化中...", lang))
             star_solid = Part.makeSolid(Part.makeShell(faces))
 
-            # 【追加】ふっくらスタイルの場合、先端エッジにフィレットを適用して丸みを持たせる
+            # ふっくらスタイルの場合、先端エッジにフィレットを適用して丸みを持たせる
             if is_puffy:
                 bar.update(78, translate_text("先端とエッジの角丸（フィレット）加工中...", lang))
                 fillet_edges = []
@@ -126,7 +129,7 @@ class Tool_Hoshi:
 
             if has_hole:
                 bar.update(85, translate_text("上部エッジ付近の紐通し穴をくり抜き（Cut）中...", lang))
-                hole_y = r_out * (0.68 if is_puffy else 0.72)
+                hole_y = r_out * 0.72
                 hole_x = 0.0
                 
                 hole_cyl = Part.makeCylinder(r_hole, t + 4.0)
