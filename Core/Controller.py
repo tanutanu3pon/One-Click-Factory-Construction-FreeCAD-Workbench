@@ -1,61 +1,53 @@
 # -*- coding: utf-8 -*-
 # Core/Controller.py
 import os
-import sys
 import re
 import importlib
 import FreeCAD
 import FreeCADGui
 
+# 【修正】絶対インポートに統一
+from Core.QtCompat import QtWidgets
+
 def translate_text(text, lang):
     import Core.Dictionary as Dictionary
-    if lang == "日本語" or not text:
+    if not text:
         return text
     
     trans_dict = Dictionary.TRANSLATION_DICT
-    if not trans_dict:
-        return text
+    rev_dict = Dictionary.REVERSE_DICT
+    clean_dict = Dictionary.CLEAN_TRANSLATION_DICT
 
-    # 1. 完全一致チェック
-    if text in trans_dict:
-        return trans_dict[text]
+    # 【英語モード】日本語 -> 英語
+    if lang == "English":
+        if text in trans_dict:
+            return trans_dict[text]
 
-    # 2. 語尾の揺れを除去したコアテキストで照合
-    clean_text = re.sub(r'(の作成|の生成|の計算|を作成します|を生成します|を作成|を生成|作成|生成)$', '', text).strip()
-    for key, val in trans_dict.items():
-        clean_key = re.sub(r'(の作成|の生成|の計算|を作成します|を生成します|を作成|を生成|作成|生成)$', '', key).strip()
-        if clean_text and clean_key and clean_text == clean_key:
-            return val
+        clean_text = re.sub(r'(の作成|の生成|の計算|を作成します|を生成します|を作成|を生成|作成|生成)$', '', text).strip()
+        if clean_text in clean_dict:
+            return clean_dict[clean_text]
 
-    # 3. HTMLタグや記号付きテキストの抽出・置換
-    match = re.match(r"^(<[^>]+>)*(.*?)(</[^>]+>|[:：\s])*$", text)
-    if match:
-        prefix = match.group(1) or ""
-        core_text = match.group(2) or ""
-        suffix = match.group(3) or ""
-        if core_text in trans_dict:
-            return prefix + trans_dict[core_text] + suffix
-        clean_core = re.sub(r'(の作成|の生成|の計算|を作成します|を生成します|を作成|を生成|作成|生成)$', '', core_text).strip()
-        for key, val in trans_dict.items():
-            clean_key = re.sub(r'(の作成|の生成|の計算|を作成します|を生成します|を作成|を生成|作成|生成)$', '', key).strip()
-            if clean_core and clean_key and clean_core == clean_key:
-                return prefix + val + suffix
+        match = re.match(r"^(<[^>]+>)*(.*?)(</[^>]+>|[:：\s])*$", text)
+        if match:
+            prefix, core_text, suffix = match.group(1) or "", match.group(2) or "", match.group(3) or ""
+            if core_text in trans_dict:
+                return prefix + trans_dict[core_text] + suffix
 
-    # 4. 辞書内の長単語からの部分一致置換
-    new_text = text
-    for jp in sorted(trans_dict.keys(), key=len, reverse=True):
-        if jp and jp in new_text:
-            new_text = new_text.replace(jp, trans_dict[jp])
+    # 【日本語モード】英語 -> 日本語（逆引き）
+    elif lang == "日本語":
+        if text in rev_dict:
+            return rev_dict[text]
             
-    return new_text
+        match = re.match(r"^(<[^>]+>)*(.*?)(</[^>]+>|[:：\s])*$", text)
+        if match:
+            prefix, core_text, suffix = match.group(1) or "", match.group(2) or "", match.group(3) or ""
+            if core_text in rev_dict:
+                return prefix + rev_dict[core_text] + suffix
 
+    return text
 
 def auto_translate_widget(widget, lang):
-    if lang == "日本語":
-        return
-    
-    from Core.QtCompat import QtWidgets
-        
+    """ダイアログやウィンドウ内の全テキストを現在の言語へ変換"""
     if hasattr(widget, "windowTitle") and widget.windowTitle():
         widget.setWindowTitle(translate_text(widget.windowTitle(), lang))
     for form in widget.findChildren(QtWidgets.QFormLayout):
@@ -80,74 +72,62 @@ def auto_translate_widget(widget, lang):
             if txt:
                 combo.setItemText(i, translate_text(txt, lang))
 
+def update_all_open_ui(lang):
+    """現在画面上に開いているすべてのウィンドウ・ダイアログの表記を即座に書き換える"""
+    for widget in QtWidgets.QApplication.topLevelWidgets():
+        try:
+            auto_translate_widget(widget, lang)
+        except Exception:
+            pass
 
-# QInputDialog / QMessageBox 等の静的関数に渡される引数（タイトルやラベル）を自動翻訳するフック関数
-def install_dialog_auto_translator():
-    from Core.QtCompat import QtWidgets
-    import Core.Language as Language
+# --- 1. QDialogのカスタムクラス ---
+class TranslatedDialog(QtWidgets.QDialog):
+    def showEvent(self, event):
+        import Core.Language as Language
+        try:
+            current_lang = Language.get_language()
+            auto_translate_widget(self, current_lang)
+        except Exception as e:
+            # 【修正】エラーを握りつぶさずコンソールに出力する
+            FreeCAD.Console.PrintError(f"Translation Error (Dialog): {e}\n")
+        super(TranslatedDialog, self).showEvent(event)
 
-    # 1. QDialog の showEvent フック（カスタムダイアログ用）
-    if not getattr(QtWidgets.QDialog, '_auto_translate_installed', False):
-        orig_showEvent = QtWidgets.QDialog.showEvent
-        def custom_showEvent(self, event):
-            try:
-                current_lang = Language.get_language()
-                if current_lang != "日本語":
-                    auto_translate_widget(self, current_lang)
-            except Exception:
-                pass
-            return orig_showEvent(self, event)
+# --- 2. QInputDialogの安全なラッパークラス ---
+class TranslatedInputDialog:
+    @staticmethod
+    def getDouble(parent, title, label, *args, **kwargs):
+        import Core.Language as Language
+        lang = Language.get_language()
+        trans_title = translate_text(title, lang)
+        trans_label = translate_text(label, lang)
+        return QtWidgets.QInputDialog.getDouble(parent, trans_title, trans_label, *args, **kwargs)
 
-        QtWidgets.QDialog.showEvent = custom_showEvent
-        QtWidgets.QDialog._auto_translate_installed = True
+    @staticmethod
+    def getText(parent, title, label, *args, **kwargs):
+        import Core.Language as Language
+        lang = Language.get_language()
+        trans_title = translate_text(title, lang)
+        trans_label = translate_text(label, lang)
+        return QtWidgets.QInputDialog.getText(parent, trans_title, trans_label, *args, **kwargs)
 
-    # 2. QInputDialog の静的関数フック（引数レベルの自動翻訳）
-    if not getattr(QtWidgets.QInputDialog, '_translation_patched', False):
-        orig_getDouble = QtWidgets.QInputDialog.getDouble
-        def custom_getDouble(parent, title, label, *args, **kwargs):
-            lang = Language.get_language()
-            if lang != "日本語":
-                title = translate_text(title, lang)
-                label = translate_text(label, lang)
-            return orig_getDouble(parent, title, label, *args, **kwargs)
-        QtWidgets.QInputDialog.getDouble = custom_getDouble
+    @staticmethod
+    def getInt(parent, title, label, *args, **kwargs):
+        import Core.Language as Language
+        lang = Language.get_language()
+        trans_title = translate_text(title, lang)
+        trans_label = translate_text(label, lang)
+        return QtWidgets.QInputDialog.getInt(parent, trans_title, trans_label, *args, **kwargs)
 
-        orig_getText = QtWidgets.QInputDialog.getText
-        def custom_getText(parent, title, label, *args, **kwargs):
-            lang = Language.get_language()
-            if lang != "日本語":
-                title = translate_text(title, lang)
-                label = translate_text(label, lang)
-            return orig_getText(parent, title, label, *args, **kwargs)
-        QtWidgets.QInputDialog.getText = custom_getText
-
-        orig_getInt = QtWidgets.QInputDialog.getInt
-        def custom_getInt(parent, title, label, *args, **kwargs):
-            lang = Language.get_language()
-            if lang != "日本語":
-                title = translate_text(title, lang)
-                label = translate_text(label, lang)
-            return orig_getInt(parent, title, label, *args, **kwargs)
-        QtWidgets.QInputDialog.getInt = custom_getInt
-
-        orig_getItem = QtWidgets.QInputDialog.getItem
-        def custom_getItem(parent, title, label, items, *args, **kwargs):
-            lang = Language.get_language()
-            if lang != "日本語":
-                title = translate_text(title, lang)
-                label = translate_text(label, lang)
-                if isinstance(items, (list, tuple)):
-                    items = [translate_text(str(it), lang) for it in items]
-            return orig_getItem(parent, title, label, items, *args, **kwargs)
-        QtWidgets.QInputDialog.getItem = custom_getItem
-
-        QtWidgets.QInputDialog._translation_patched = True
-
+    @staticmethod
+    def getItem(parent, title, label, items, *args, **kwargs):
+        import Core.Language as Language
+        lang = Language.get_language()
+        trans_title = translate_text(title, lang)
+        trans_label = translate_text(label, lang)
+        trans_items = [translate_text(str(it), lang) for it in items]
+        return QtWidgets.QInputDialog.getItem(parent, trans_title, trans_label, trans_items, *args, **kwargs)
 
 def register_workbench(base_path):
-    # ダイアログの自動翻訳フックを適用
-    install_dialog_auto_translator()
-
     original_addCommand = FreeCADGui.addCommand
 
     def custom_addCommand(command_name, command_obj):
@@ -157,7 +137,6 @@ def register_workbench(base_path):
                 import Core.Language as Language
                 current_lang = Language.get_language()
                 res = orig_get_resources(*args, **kwargs)
-                
                 if 'MenuText' in res and res['MenuText']:
                     res['MenuText'] = translate_text(res['MenuText'], current_lang)
                 if 'ToolTip' in res and res['ToolTip']:
@@ -168,8 +147,6 @@ def register_workbench(base_path):
         if hasattr(command_obj, 'Activated'):
             orig_activated = command_obj.Activated
             def wrapped_activated(*args, **kwargs):
-                from Core.QtCompat import QtWidgets
-                
                 try:
                     orig_activated(*args, **kwargs)
                 except Exception as e:
@@ -177,8 +154,11 @@ def register_workbench(base_path):
                     FreeCAD.Console.PrintError(traceback.format_exc())
                     
                     doc = FreeCAD.activeDocument()
-                    if doc and hasattr(doc, 'hasPendingTransaction') and doc.hasPendingTransaction():
-                        doc.abortTransaction()
+                    if doc:
+                        try:
+                            doc.abortTransaction()
+                        except Exception:
+                            pass
                     
                     main_win = FreeCADGui.getMainWindow()
                     if main_win:
@@ -191,9 +171,7 @@ def register_workbench(base_path):
                     QtWidgets.QMessageBox.critical(None, "ツール実行エラー", f"処理中に予期せぬエラーが発生しました。\n\n詳細:\n{str(e)}")
                         
             command_obj.Activated = wrapped_activated
-
         original_addCommand(command_name, command_obj)
-
 
     gui_path = base_path.replace('\\', '/')
     icons_dir = os.path.join(gui_path, "icons").replace('\\', '/')
@@ -206,44 +184,42 @@ def register_workbench(base_path):
         MenuText = "Click Factory"
         ToolTip = "Click Factory Workbench"
         Icon = ring_icon_path
-
-        def GetIcon(self):
-            return ring_icon_path
-
+        def GetIcon(self): return ring_icon_path
         def Initialize(self):
-            self.Icon = ring_icon_path
-
             tools_config = [
-                {"module": "Launcher", "id": "Ring_Launcher"},
                 {"module": "MakeRing", "id": "Ring_MakeRing"},
                 {"module": "Tyoukoku", "id": "Ring_Tyoukoku"},
                 {"module": "Daiya",    "id": "Ring_Daiya"},
                 {"module": "Connect",  "id": "Ring_Connect"},
                 {"module": "Weight",   "id": "Ring_Weight"},
-                {"module": "MakeJig",   "id": "Ring_MakeJig"},
+                {"module": "MakeJig",  "id": "Ring_MakeJig"},
                 {"module": "Magatama", "id": "Ring_Magatama"},
                 {"module": "Suiteki",  "id": "Ring_Suiteki"},
                 {"module": "Mikazuki", "id": "Ring_Mikazuki"},
                 {"module": "Heart",    "id": "Ring_Heart"},
                 {"module": "Hoshi",    "id": "Ring_Hoshi"},
+                {"module": "MakeDonguri", "id": "Ring_MakeDonguri"},
                 {"module": "Inkan",    "id": "Ring_Inkan"},    
                 {"module": "Button",   "id": "Ring_Button"},
                 {"module": "MakeMug",  "id": "Ring_Mug"},
+                {"module": "MakeSara", "id": "Ring_MakeSara"},
+                {"module": "MakeHashioki", "id": "Ring_MakeHashioki"},
+                {"module": "MakeCoaster", "id": "Ring_MakeCoaster"},
                 {"module": "MakeVase", "id": "Ring_Vase"},
                 {"module": "Box",      "id": "Ring_Box"},
                 {"module": "BatteryBox", "id": "Ring_BatteryBox"},
                 {"module": "MakeSpoon", "id": "Ring_MakeSpoon"},
+                {"module": "MakeHashi", "id": "Ring_MakeHashi"},
                 {"module": "MakeSHook", "id": "Ring_MakeSHook"},
                 {"module": "MakeCookie", "id": "Ring_MakeCookie"},
                 {"module": "MakePlanetaryGear", "id": "Ring_MakePlanetaryGear"},
                 {"module": "Make3DText", "id": "Ring_Make3DText"},    
                 {"module": "ModelPresenter", "id": "Ring_ModelPresenter"},  
                 {"module": "MakeFish", "id": "Ring_MakeFish"},
+                {"module": "Dangomushi", "id": "Ring_Dangomushi"},
             ]
-
             FreeCADGui.addCommand = custom_addCommand
             command_list = []
-            
             try:
                 for tool in tools_config:
                     module_name = f"Tool.{tool['module']}"
@@ -256,28 +232,18 @@ def register_workbench(base_path):
                         FreeCAD.Console.PrintWarning(f"ツール [{tool['module']}] スキップ: {str(e)}\n")
             finally:
                 FreeCADGui.addCommand = original_addCommand
-                
             if command_list:
                 self.appendToolbar("Ring Tools", command_list)
                 self.appendMenu(["&Ring"], command_list)
-
-        def Activated(self): pass
-        def Deactivated(self): pass
         def GetClassName(self): return "Gui::PythonWorkbench"
 
     class ConstructionWorkbench(FreeCADGui.Workbench):
         MenuText = "Construction"
         ToolTip = "Construction Workbench"
         Icon = const_icon_path
-
-        def GetIcon(self):
-            return const_icon_path
-
+        def GetIcon(self): return const_icon_path
         def Initialize(self):
-            self.Icon = const_icon_path
-
             tools_config = [
-                {"module": "Launcher", "id": "Construction_Launcher"},
                 {"module": "MakeWall", "id": "Construction_MakeWall"},
                 {"module": "CalcWall", "id": "Construction_CalcWall"},
                 {"module": "MakeRoad", "id": "Construction_MakeRoad"},
@@ -285,10 +251,8 @@ def register_workbench(base_path):
                 {"module": "MakeExcelSurface", "id": "Construction_MakeExcelSurface"},
                 {"module": "CalcEarthworkSolid", "id": "Construction_CalcEarthworkSolid"},
             ]
-
             FreeCADGui.addCommand = custom_addCommand
             command_list = []
-            
             try:
                 for tool in tools_config:
                     module_name = f"Tool.{tool['module']}"
@@ -301,20 +265,15 @@ def register_workbench(base_path):
                         FreeCAD.Console.PrintWarning(f"ツール [{tool['module']}] スキップ: {str(e)}\n")
             finally:
                 FreeCADGui.addCommand = original_addCommand
-                
             if command_list:
                 self.appendToolbar("Construction Tools", command_list)
                 self.appendMenu(["&Construction"], command_list)
-
-        def Activated(self): pass
-        def Deactivated(self): pass
         def GetClassName(self): return "Gui::PythonWorkbench"
 
     try:
         FreeCADGui.addWorkbench(RingWorkbench())
     except KeyError:
         pass
-
     try:
         FreeCADGui.addWorkbench(ConstructionWorkbench())
     except KeyError:

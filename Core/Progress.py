@@ -8,11 +8,9 @@ class ProgressManager:
         self.pd = None
         self.doc = None
 
-    # ★追加: with構文に入った時の処理
     def __enter__(self):
         return self
 
-    # ★追加: with構文を抜けた時（正常終了時・エラー発生時問わず）に確実にcloseを呼ぶ
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
 
@@ -24,7 +22,6 @@ class ProgressManager:
         self.pd = QtWidgets.QProgressDialog(initial_text, None, 0, 100, None)
         self.pd.setWindowTitle(title)
         
-        # ★改善: PySide6 (新しいQt) と PySide2 のフラグ指定の違いを安全に吸収
         if hasattr(QtCore.Qt, "WindowType"):
             flags = (QtCore.Qt.WindowType.Window | 
                      QtCore.Qt.WindowType.WindowTitleHint | 

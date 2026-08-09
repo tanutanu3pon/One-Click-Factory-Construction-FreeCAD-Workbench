@@ -1,70 +1,46 @@
 # -*- coding: utf-8 -*-
 # Core/Language.py
-from Core.QtCompat import QtWidgets
 import FreeCAD
 
 _CURRENT_LANG = None
-_ALREADY_PROMPTED = False
 
-def get_language():
-    """起動時はダイアログを出さず、設定から言語を静かに読み込む"""
+def init_language():
     global _CURRENT_LANG
-    
-    if _CURRENT_LANG is not None:
-        return _CURRENT_LANG
-
     try:
-        param = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/General")
-        lang_code = param.GetString("Language", "Japanese")
-        _CURRENT_LANG = "English" if lang_code == "English" else "日本語"
+        param_custom = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/ClickFactory")
+        custom_lang = param_custom.GetString("Language", "")
+
+        if custom_lang in ["English", "en"]:
+            _CURRENT_LANG = "English"
+            return
+        elif custom_lang in ["Japanese", "ja", "日本語"]:
+            _CURRENT_LANG = "日本語"
+            return
+
+        param_main = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/General")
+        main_lang = param_main.GetString("Language", "Japanese")
+
+        if main_lang.lower().startswith("en") or main_lang == "English":
+            _CURRENT_LANG = "English"
+        else:
+            _CURRENT_LANG = "日本語"
+
     except Exception:
         _CURRENT_LANG = "日本語"
-        
+
+def get_language():
+    # 【修正】古い記憶（キャッシュ）を使わず、毎回設定を確認しに行く
+    init_language()
     return _CURRENT_LANG
 
+def set_language(lang):
+    global _CURRENT_LANG
+    _CURRENT_LANG = "English" if lang in ["English", "en"] else "日本語"
+    try:
+        param = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/ClickFactory")
+        param.SetString("Language", "English" if _CURRENT_LANG == "English" else "Japanese")
 
-def prompt_language(force=False):
-    """ワークベンチ起動時に呼ばれる言語選択ダイアログ"""
-    global _CURRENT_LANG, _ALREADY_PROMPTED
-    
-    # GUI非依存環境（CUIモード）でのクラッシュ防止
-    if not FreeCAD.GuiUp:
-        return get_language()
-    
-    if _ALREADY_PROMPTED and not force:
-        return get_language()
-        
-    _ALREADY_PROMPTED = True
-    
-    languages = ["日本語", "English"]
-    current = get_language()
-    default_index = languages.index(current) if current in languages else 0
-    
-    try:
-        lang, ok = QtWidgets.QInputDialog.getItem(
-            None, 
-            "Language / 言語設定", 
-            "言語を選択してください\n(Choose language):", 
-            languages, 
-            default_index, False
-        )
-        if ok and lang:
-            if lang == current:
-                return _CURRENT_LANG
-            _CURRENT_LANG = lang
-        else:
-            return _CURRENT_LANG
+        import Core.Dictionary as Dictionary
+        Dictionary.load_dictionary()
     except Exception:
         pass
-        
-    try:
-        param = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/General")
-        target_fc_lang = "English" if _CURRENT_LANG == "English" else "Japanese"
-            
-        if param.GetString("Language", "") != target_fc_lang:
-            param.SetString("Language", target_fc_lang)
-            
-    except Exception:
-        pass
-            
-    return _CURRENT_LANG
