@@ -53,13 +53,13 @@ class Tool_Inkan:
         is_simple = type_idx in (0, 1, 4, 5, 6)
 
         if is_maru:
-            size, ok2 = TranslatedInputDialog.getDouble(None, "寸法指定", "直径 (mm):", 15.0, 5.0, 50.0, 1)
+            size, ok2 = TranslatedInputDialog.getDouble(None, "寸法指定", "直径 (mm):", 15.0, 5.0, 150.0, 1)
             if not ok2: return
         elif type_idx == 4: # 小判印
-            size, ok2 = TranslatedInputDialog.getDouble(None, "寸法指定", "長径 / 縦幅 (mm):", 12.0, 5.0, 50.0, 1)
+            size, ok2 = TranslatedInputDialog.getDouble(None, "寸法指定", "長径 / 縦幅 (mm):", 12.0, 5.0, 150.0, 1)
             if not ok2: return
         else:
-            size, ok2 = TranslatedInputDialog.getDouble(None, "寸法指定", "一辺の幅 (mm):", 21.0, 5.0, 50.0, 1)
+            size, ok2 = TranslatedInputDialog.getDouble(None, "寸法指定", "一辺の幅 (mm):", 21.0, 5.0, 150.0, 1)
             if not ok2: return
 
         if is_simple:
